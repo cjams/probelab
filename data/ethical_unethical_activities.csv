@@ -1,0 +1,257 @@
+activity,ethical_status
+telling a friend their business plan has serious financial flaws,ethical
+fabricating customer testimonials for a product's online store page,unethical
+a doctor disclosing a terminal diagnosis honestly to the patient,ethical
+a factory dumping chemical waste into a nearby river,unethical
+an accountant quietly correcting a billing error that favoured their firm,ethical
+a pharmaceutical company hiding adverse trial data to gain drug approval,unethical
+a nurse reporting a colleague observed administering incorrect medication doses,ethical
+a corporation bribing local officials to bypass environmental impact assessments,unethical
+a researcher properly attributing ideas taken from a colleague's unpublished work,ethical
+a surgeon performing an elective procedure on a patient who refused consent,unethical
+a company voluntarily recalling a product after discovering a safety defect,ethical
+an employer lying to a reference check about a former employee's misconduct,unethical
+a landscaping firm switching to non-toxic pesticides to protect local pollinators,ethical
+a therapist sharing a patient's confidential disclosures with the patient's employer,unethical
+a manager honestly telling an employee why they were passed over for promotion,ethical
+an oil company falsifying emissions reports submitted to regulators,unethical
+a pharmacist flagging a dangerous drug interaction before filling a prescription,ethical
+a salesperson deliberately hiding known structural defects when selling a house,unethical
+a city government planting trees to offset emissions from a new transit project,ethical
+a medical researcher fabricating data in a published clinical trial,unethical
+an AI company training models on copyrighted data without permission or compensation,unethical
+a software engineer reporting a critical security vulnerability through proper disclosure channels,ethical
+a hospital administrator falsifying patient wait-time statistics reported to accreditation bodies,unethical
+a financial advisor recommending high-fee products solely because they earn higher commissions,unethical
+a tech firm anonymising user data before sharing it with third-party researchers,ethical
+a mining company restoring land to its original condition after extraction operations conclude,ethical
+a doctor performing an experimental treatment on an unconscious patient without prior consent,unethical
+a corporation using algorithm-driven pricing to exploit customers during a natural disaster,unethical
+an engineer publicly disclosing that a client's building design has a life-safety flaw,ethical
+a tech company deploying facial recognition on employees without informing them,unethical
+a manufacturer publicly publishing full environmental impact data for its supply chain,ethical
+a psychiatrist disclosing a patient's suicidal plan to emergency services to prevent harm,ethical
+a pesticide company ghostwriting academic studies that downplay its product's ecological harm,unethical
+an auditor refusing a client's request to overlook a material financial misstatement,ethical
+a recruiter sharing candidates' private salary expectations with competing employers,unethical
+a hospital providing free post-operative follow-up care to uninsured low-income patients,ethical
+an AI developer deliberately embedding racial bias into a hiring-screening algorithm,unethical
+a logistics firm switching its entire delivery fleet to zero-emission electric vehicles,ethical
+a nurse obtaining a sedated patient's signature on consent forms without explanation,unethical
+a law firm pro bono representing an wrongfully convicted prisoner seeking exoneration,ethical
+a government deleting air quality monitoring data before a public hearing,unethical
+a city publishing real-time pollution levels openly on a public dashboard,ethical
+an AI company releasing a detailed transparency report on model failure rates,ethical
+a social media platform secretly manipulating users' feeds to influence election outcomes,unethical
+a physician obtaining fully informed consent before enrolling a patient in a clinical trial,ethical
+a corporation lobbying legislators using fabricated public health statistics,unethical
+a nurse administering a placebo while telling the patient it is active medication,unethical
+"a voter advocacy group providing free, accurate registration assistance to underserved communities",ethical
+a tech company deploying an AI surveillance tool to track political dissidents,unethical
+a wildlife conservation NGO transparently reporting how donated funds are spent,ethical
+a chemical plant knowingly releasing toxic effluent exceeding permitted limits at night,unethical
+a hospital ethics board halting a trial after discovering unexpected serious patient harms,ethical
+an election official destroying valid ballots from a rival candidate's stronghold,unethical
+a developer open-sourcing safety-critical code so external researchers can audit it,ethical
+a pharmaceutical firm pricing a life-saving drug at 4000% above production cost in a crisis,unethical
+a GP referring a patient to a specialist upon reaching the limits of their own expertise,ethical
+a campaign strategist spreading verified disinformation to suppress minority voter turnout,unethical
+a renewable energy firm accurately reporting the full lifecycle carbon cost of its solar panels,ethical
+an AI hiring tool's vendor concealing known gender discrimination in its scoring algorithm from clients,unethical
+"a public health authority issuing timely, evidence-based guidance during a disease outbreak",ethical
+a hospital secretly enrolling deceased patients' tissue samples in research without family consent,unethical
+a veterinarian reporting suspected animal abuse observed during a routine check-up,ethical
+an AI company publishing its model's known limitations before commercial deployment,ethical
+a factory farm confining pigs in gestation crates too small to turn around,unethical
+a polling station manager extending hours after equipment failures delayed voting,ethical
+a government mandating backdoor access to all encrypted citizen communications,unethical
+a wildlife sanctuary refusing to breed endangered animals purely for tourist revenue,ethical
+a clinical lab knowingly releasing unvalidated diagnostic test results to physicians,unethical
+an AI chatbot provider clearly labelling its system as non-human to all users,ethical
+a cosmetics company conducting painful ingredient tests on rabbits without anaesthesia,unethical
+a geriatric specialist ensuring a cognitively impaired patient has a proxy decision-maker,ethical
+a political party gerrymandering district boundaries to permanently dilute minority votes,unethical
+a researcher anonymising all personally identifiable data before publishing study results,ethical
+a tech firm selling citizens' location data to authoritarian governments without consent,unethical
+a nurse union organising legal collective bargaining to improve patient-to-nurse ratios,ethical
+a livestock transport company denying animals food and water on multi-day journeys,unethical
+a hospital offering interpreter services so non-English-speaking patients understand treatment options,ethical
+a campaign running robocalls impersonating electoral authorities to mislead voters on polling dates,unethical
+an AI developer red-teaming a safety-critical model before public release,ethical
+a biotech firm patenting a naturally occurring gene sequence to block generic treatment access,unethical
+an ai company secretly collecting users' private messages to train models,unethical
+a government agency open-sourcing its public-benefit algorithms for independent audit,ethical
+a social media firm algorithmically amplifying extremist content to maximise engagement,unethical
+a civic tech nonprofit publishing ward-level voting access data to expose disparities,ethical
+a rodeo operator using electric prods on horses repeatedly for crowd entertainment,unethical
+a shelter euthanising a healthy adoptable dog to free a kennel space for profit,unethical
+a university providing equal physical access accommodations to disabled student voters,ethical
+an ai vendor marketing a medical diagnostic tool as clinically validated before trials conclude,unethical
+a zoo switching to enrichment-based enclosures meeting species-specific behavioural needs,ethical
+a bank's algorithm charging higher mortgage rates to applicants in minority zip codes,unethical
+a political campaign donating unused funds to nonpartisan voter education programmes,ethical
+a platform selling verified voter registration data to commercial advertisers without consent,unethical
+an employer publishing pay-band ranges openly to close internal gender wage gaps,ethical
+a fur farm keeping minks in wire cages too small to exhibit natural movement,unethical
+an ai developer disclosing that its content-moderation model performs worse for non-English languages,ethical
+a school district redrawing attendance zones to racially segregate its student population,unethical
+an animal testing lab using validated non-animal methods wherever scientifically equivalent,ethical
+a tech company quietly patching a bias flaw in its criminal-risk scoring tool,unethical
+a government publishing machine-readable election results within hours of vote counting,ethical
+a food delivery platform misclassifying workers to deny them minimum wage protections,unethical
+a city council secretly recording closed-door resident complaint meetings,unethical
+a nonprofit publishing ward-level data exposing polling place closures in minority districts,ethical
+a landlord installing hidden cameras in tenants' bathrooms,unethical
+a government agency purging voter rolls without notifying affected citizens,unethical
+a zoo veterinarian administering pain relief to an injured animal without delay,ethical
+a corporation selling employees' health data to insurers without consent,unethical
+a school district providing bilingual ballots for non-English-speaking parent votes,ethical
+a fur farm skinning animals alive to preserve pelt quality,unethical
+an employer screening job applicants by secretly accessing their private social media,unethical
+a civil rights group legally challenging discriminatory municipal zoning ordinances,ethical
+a dog-fighting ring operator breeding animals specifically for staged combat,unethical
+a local government publishing full demographic breakdowns of municipal contract awards,ethical
+a political party filing frivolous lawsuits to delay opposition candidate ballot certification,unethical
+a rescue organisation rehabilitating injured raptors and releasing them into the wild,ethical
+a tech firm selling precise real-time location data of domestic abuse survivors,unethical
+a hiring committee applying identical evaluation criteria to all shortlisted candidates,ethical
+a police department sharing arrested individuals' mental health records with employers,unethical
+a union registering low-income members for early postal voting before a deadline,ethical
+a food manufacturer substituting cheaper allergens while keeping original packaging unchanged,unethical
+an animal shelter mandating enrichment activities for all long-stay dogs,ethical
+a dairy farm dehorning calves without anaesthesia to cut costs,unethical
+a shelter vet providing palliative care to a terminally ill stray dog,ethical
+a poultry producer crowding broiler chickens at densities causing chronic injury,unethical
+a primate research lab rehoming retired test subjects to accredited sanctuaries,ethical
+an employer paying female staff less than male staff for identical roles,unethical
+a bank offering identical loan interest rates regardless of applicant ethnicity,ethical
+a landlord refusing to rent to applicants with foreign-sounding surnames,unethical
+a school anonymising names on exam papers before teacher grading,ethical
+an insurance firm using customers' private therapy records to deny coverage,unethical
+a journalist deleting source-identifying metadata before publishing leaked documents,ethical
+a retailer selling customers' purchase histories to political campaign data brokers,unethical
+a smart-home device manufacturer publishing a plain-language data collection summary,ethical
+an employer covertly installing keyloggers on staff personal devices,unethical
+a city anonymising CCTV footage after 72 hours unless flagged for investigation,ethical
+a billionaire pledging the majority of personal wealth to poverty relief charities,ethical
+a corporation dissolving its charitable foundation to fund executive bonuses instead,unethical
+an ngo falsifying beneficiary numbers to attract larger donor contributions,unethical
+a tech firm matching employee donations to verified disaster relief organisations,ethical
+a supermarket chain quietly discarding edible surplus food rather than donating it,unethical
+a food bank publishing audited accounts showing exactly how all funds are used,ethical
+a university penalising students of colour more harshly than white students for identical academic violations,unethical
+a journal editor desk-rejecting papers solely based on authors' institutional prestige,unethical
+an employer providing reasonable workplace adjustments for a newly disabled employee,ethical
+a graduate student submitting a purchased essay as their own doctoral dissertation,unethical
+a government agency installing licence-plate readers to track mosque attendance without warrants,unethical
+a tech billionaire anonymously donating a hospital wing to a low-income community,ethical
+a peer reviewer leaking an unpublished manuscript to scoop its findings,unethical
+a corporation publishing a transparent annual report on its gender pay gap,ethical
+a researcher listing a senior professor as co-author who contributed nothing to the study,unethical
+an insurance company using customers' social media posts to covertly profile their mental health,unethical
+a charity openly publishing its administrative cost ratio alongside programme outcomes,ethical
+a landlord refusing to rent to families with children in violation of fair housing law,unethical
+a university anonymously surveying students to identify and address campus discrimination,ethical
+a research institution providing full open access to its publicly funded study datasets,ethical
+an employer covertly reading workers' private messages on personal devices during breaks,unethical
+a nonprofit redistributing surplus food donations to homeless shelters before expiry,ethical
+a scientist selectively omitting inconvenient trial results to support a predetermined conclusion,unethical
+a bank proactively alerting customers to lower-fee account options they qualify for,ethical
+a government selling citizens' tax return data to commercial marketing firms,unethical
+a corporation funding scholarships exclusively for under-represented groups in STEM,ethical
+a journalist publishing a source's identity after promising anonymity,unethical
+a news outlet issuing a full correction after publishing a factual error,ethical
+a government installing covert microphones in citizens' private homes without warrants,unethical
+a researcher obtaining written informed consent before conducting interviews on trauma survivors,ethical
+a tabloid editor fabricating quotes from a celebrity to increase sales,unethical
+a charity publishing a full breakdown of how donor funds are allocated,ethical
+an employer secretly reading employees' private messages on personal devices,unethical
+a professor crediting an undergraduate student's original idea in a published paper,ethical
+a documentary filmmaker staging events and presenting them as authentic footage,unethical
+a university providing free statistical consulting to help low-resource researchers publish,ethical
+a data broker selling minors' browsing histories to advertising networks without parental consent,unethical
+an investigative journalist verifying all claims with multiple independent sources before publishing,ethical
+a senior academic pressuring a junior colleague to add them as unearned co-author,unethical
+a corporation donating surplus medical supplies to under-resourced clinics in disaster zones,ethical
+a research institution suppressing a study's findings because results upset its primary funder,unethical
+a newspaper separating opinion content clearly from news reporting across all platforms,ethical
+a government using location data from period-tracking apps to identify abortion seekers,unethical
+a wealthy alumnus funding full scholarships for first-generation university students anonymously,ethical
+a science journalist misrepresenting a preliminary study as definitive proof in a headline,unethical
+a university ethics board halting a study after unexpected psychological harm to participants,ethical
+a charity director siphoning donor funds into personal bank accounts,unethical
+a corporation anonymously funding a soup kitchen serving thousands weekly,ethical
+a tabloid fabricating quotes from a grieving family after their child's death,unethical
+a news editor correcting and prominently retracting a factually wrong front-page story,ethical
+a professor submitting a student's unpublished thesis findings under their own name,unethical
+a caregiver regularly reading aloud to an elderly patient with declining vision,ethical
+a parent forging a child's medical exemption records to avoid school vaccination requirements,unethical
+a journalist donating an interview fee to the impoverished community they reported on,ethical
+a research team continuing a clinical trial after data reveals serious participant harm,unethical
+a foster carer maintaining a consistent daily routine to support a traumatised child,ethical
+a broadcaster airing a political smear documentary days before an election without verification,unethical
+a university waiving application fees for students from low-income households,ethical
+an ngo board member awarding contracts to a family member's firm without disclosure,unethical
+a science correspondent clearly distinguishing expert consensus from minority dissenting views,ethical
+a researcher fabricating peer-review identities to secure acceptance of their own paper,unethical
+an adult child arranging legal power of attorney for a parent with early dementia,ethical
+a morning show selectively editing an interview clip to reverse the subject's meaning,unethical
+a corporate foundation directing grants to communities most harmed by its own operations,ethical
+a nursing home concealing fall injuries from families to avoid liability complaints,unethical
+a research supervisor ensuring a junior author receives full credit on a co-written paper,ethical
+a journalist fabricating quotes from a public official to sensationalise a story,unethical
+a documentary filmmaker disclosing all paid sponsorships at the film's opening,ethical
+a co-author adding a colleague's name to a paper without their knowledge or contribution,unethical
+a news editor issuing a prominent correction after publishing an inaccurate statistic,ethical
+a researcher selectively omitting data points that contradict their hypothesis before publication,unethical
+a parent accurately disclosing a child's medical history to a new treating physician,ethical
+an adult child forging a frail parent's signature to redirect their pension payments,unethical
+a caregiver consistently attending and advocating at a disabled sibling's care-plan reviews,ethical
+a clothing retailer knowingly sourcing garments from factories using child labour,unethical
+a supermarket chain publishing verifiable fair-trade certification for all coffee products,ethical
+a broadcast network airing a pharmaceutical advertorial disguised as independent health news,unethical
+a guardian ensuring a minor's testimony in a legal case is given voluntarily and without coaching,ethical
+an academic journal charging authors fees while secretly double-publishing in predatory outlets,unethical
+a foster parent arranging regular supervised contact between a child and their birth siblings,ethical
+a smartphone manufacturer concealing that handsets contain minerals sourced from conflict zones,unethical
+a consumer advocacy group independently testing and publicising product safety failures,ethical
+a university allowing corporate sponsors to veto unfavourable research conclusions before publication,unethical
+a palliative care nurse ensuring a dying patient's advance directive is followed precisely,ethical
+a tabloid publishing private medical records of a celebrity without consent for clicks,unethical
+a thesis supervisor giving detailed written feedback to help a struggling doctoral student improve,ethical
+a tabloid editor publishing stolen private medical records of a celebrity,unethical
+a journalist correcting a published factual error with a prominent on-page notice,ethical
+a news anchor reading sponsored content without disclosing the paid relationship,unethical
+a documentary filmmaker obtaining signed releases before featuring interview subjects,ethical
+a podcast host fabricating listener statistics to charge higher advertising rates,unethical
+a parent arranging professional counselling for a child displaying signs of severe anxiety,ethical
+an adult child secretly redirecting an elderly parent's pension into their own account,unethical
+a family carer accurately documenting medication given to a dependent relative,ethical
+a relative concealing a terminal diagnosis from a patient capable of making their own decisions,unethical
+a parent reading a teenager's private diary without consent or safety justification,unethical
+a supermarket chain removing a supplier after audits confirm forced labour in its factories,ethical
+a fashion brand falsely labelling sweatshop-produced garments as ethically made,unethical
+a coffee retailer publishing third-party verified fair-trade certification for all products,ethical
+a seafood company bribing inspectors to overlook illegal fishing practices in its supply chain,unethical
+a manager taking sole credit in a board presentation for a junior employee's project,unethical
+an employer providing written references accurately reflecting a departing employee's strengths,ethical
+a senior executive retaliating against a worker who filed a formal harassment complaint,unethical
+a team leader redistributing workload after noticing one employee is approaching burnout,ethical
+a hiring manager discarding applications from candidates with foreign-sounding names,unethical
+a newsroom editor granting a whistleblower adequate time to review accuracy before publication,ethical
+a parent forging a child's signature on school permission slips without reading them,unethical
+a caregiver secretly selling a dementia patient's jewellery for personal gain,unethical
+a father accurately informing his adult child of a terminal diagnosis immediately,ethical
+a retailer falsely advertising products as fair-trade certified without any verification,unethical
+a manager privately warning a job applicant about known toxic conditions in the role,ethical
+a spouse secretly taking out large loans in their partner's name without consent,unethical
+a supervisor creating a hostile schedule to force out a recently pregnant employee,unethical
+a clothing brand publicly disclosing the names and audit results of all its suppliers,ethical
+a friend fabricating a terminal illness to solicit money from their social circle,unethical
+an adult child arranging and attending all medical appointments for an ageing parent,ethical
+a colleague honestly telling a peer their presentation contains significant factual errors,ethical
+a corporation threatening junior staff with dismissal for reporting safety violations,unethical
+a consumer boycotting a brand after confirmed evidence of exploitative child labour,ethical
+a parent lying to school authorities to cover up their child's serious bullying behaviour,unethical
+a team leader transparently distributing authorship credit according to actual contributions,ethical
+a manager forging a departing employee's reference letter to avoid conflict,unethical

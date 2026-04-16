@@ -1,0 +1,24 @@
+[project]
+name = "probelab"
+version = "0.1.0"
+description = "A libary for linear probe experimentation"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "ipywidgets>=8.1.8",
+    "jupyter>=1.1.1",
+    "matplotlib>=3.10.8",
+    "numpy>=2.4.4",
+    "pandas>=3.0.2",
+    "torch>=2.11.0",
+    "transformer-lens>=2.16.1",
+    "transformers>=5.5.3",
+]
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = [".."]
+include = ["probelab*"]
