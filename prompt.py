@@ -39,6 +39,7 @@ class ChatFormatter:
     def format(self, data: Example | ProbeDataset) -> str | list[str]:
         if isinstance(data, ProbeDataset):
             return [self._format_one(ex) for ex in data]
+        
         return self._format_one(data)
 
     def _format_one(self, example: Example) -> str:

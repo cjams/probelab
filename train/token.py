@@ -5,7 +5,7 @@ from typing import Literal
 from train.activation import ActivationDataset
 
 _SENTINEL = "XPROBESENTINEL"
-LayerSelection = int | list[int] | Literal["all"]
+LayerSelection = int | list[int] | Literal["all", "all_transformer"]
 
 
 def get_post_instruction_tokens(tokenizer, tokenize: bool = True) -> list[int] | str:
@@ -55,6 +55,9 @@ def get_post_instruction_tokens(tokenizer, tokenize: bool = True) -> list[int] |
 def _resolve_layers(act_dataset: ActivationDataset, layer: LayerSelection) -> list[int]:
     if layer == "all":
         return sorted(act_dataset.activations.keys())
+
+    if layer == "all_transformer":
+        return [k for k in sorted(act_dataset.activations.keys()) if k != 0]
 
     if isinstance(layer, int):
         return [layer]

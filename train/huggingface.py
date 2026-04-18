@@ -1,6 +1,7 @@
 import torch
 
 from typing import Callable
+from tqdm.auto import tqdm
 from transformers import (
     AutoModelForCausalLM,
     AutoModelForImageTextToText,
@@ -41,9 +42,9 @@ class HFActivationCollector(ActivationCollector):
         self,
         model_id: str,
         spec: ActivationSpec,
+        trust_remote_code: bool,
         device: str = "cuda",
         dtype: torch.dtype = torch.bfloat16,
-        trust_remote_code: bool = False,
         padding_side: str = "left",
     ):
         if spec.component != "residual":
@@ -130,7 +131,9 @@ class HFActivationCollector(ActivationCollector):
         all_input_ids: list[torch.Tensor] = []
         all_attention_masks: list[torch.Tensor] = []
 
-        for batch_start in range(0, len(texts), batch_size):
+        n_batches = (len(texts) + batch_size - 1) // batch_size
+
+        for batch_start in tqdm(range(0, len(texts), batch_size), total=n_batches, desc="collecting", unit="batch"):
             batch_texts = texts[batch_start : batch_start + batch_size]
 
             encoded = self.tokenizer(
