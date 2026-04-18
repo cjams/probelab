@@ -1,10 +1,20 @@
 import torch
 
 from typing import Callable
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import (
+    AutoModelForCausalLM,
+    AutoModelForImageTextToText,
+    AutoProcessor,
+    AutoTokenizer,
+)
 
 from probelab.dataset.base import Example, ProbeDataset
 from train.activation import ActivationCollector, ActivationDataset, ActivationSpec
+
+# Model ID prefixes that require AutoProcessor + AutoModelForImageTextToText.
+_IMAGE_TEXT_TO_TEXT_PREFIXES = (
+    "google/gemma-4",
+)
 
 class HFActivationCollector(ActivationCollector):
     """
@@ -47,22 +57,43 @@ class HFActivationCollector(ActivationCollector):
         self.spec = spec
         self.device = device
 
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            model_id,
-            trust_remote_code=trust_remote_code,
-        )
+        is_image_text = any(model_id.startswith(p) for p in _IMAGE_TEXT_TO_TEXT_PREFIXES)
 
-        self.tokenizer.padding_side = padding_side
+        if is_image_text:
+            self.tokenizer = AutoProcessor.from_pretrained(
+                model_id,
+                trust_remote_code=trust_remote_code,
+            )
 
-        # Some tokenizers (e.g. LLaMA) have no pad token by default.
-        if self.tokenizer.pad_token is None:
-            self.tokenizer.pad_token = self.tokenizer.eos_token
+            underlying_tok = self.tokenizer.tokenizer
+            underlying_tok.padding_side = padding_side
 
-        self.model = AutoModelForCausalLM.from_pretrained(
-            model_id,
-            dtype=dtype,
-            trust_remote_code=trust_remote_code,
-        ).to(device)
+            if underlying_tok.pad_token is None:
+                underlying_tok.pad_token = underlying_tok.eos_token
+
+            self.model = AutoModelForImageTextToText.from_pretrained(
+                model_id,
+                dtype=dtype,
+                trust_remote_code=trust_remote_code,
+                device_map=device
+            )
+        else:
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                model_id,
+                trust_remote_code=trust_remote_code,
+            )
+            self.tokenizer.padding_side = padding_side
+
+            # Some tokenizers (e.g. LLaMA) have no pad token by default.
+            if self.tokenizer.pad_token is None:
+                self.tokenizer.pad_token = self.tokenizer.eos_token
+
+            self.model = AutoModelForCausalLM.from_pretrained(
+                model_id,
+                dtype=dtype,
+                trust_remote_code=trust_remote_code,
+                device_map=device
+            )
 
         self.model.eval()
 
@@ -150,11 +181,15 @@ class HFActivationCollector(ActivationCollector):
             spec=self.spec,
         )
 
+    def _text_config(self):
+        cfg = self.model.config
+        return cfg.text_config if hasattr(cfg, "text_config") else cfg
+
     def d_model(self) -> int:
-        return self.model.config.hidden_size
+        return self._text_config().hidden_size
 
     def d_vocab(self) -> int:
-        return self.model.config.vocab_size
+        return self._text_config().vocab_size
 
 def _pad_and_stack(tensors: list[torch.Tensor], pad_value) -> torch.Tensor:
     """

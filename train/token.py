@@ -1,231 +1,263 @@
 import torch
 
 from abc import ABC, abstractmethod
+from typing import Literal
 from train.activation import ActivationDataset
 
+_SENTINEL = "XPROBESENTINEL"
+LayerSelection = int | list[int] | Literal["all"]
+
+
+def get_post_instruction_tokens(tokenizer, tokenize: bool = True) -> list[int] | str:
+    """
+    Return the tokens (or text) that follow user content in a chat-formatted
+    prompt, up to and including the generation prompt.
+
+    Uses a sentinel as the user content so the exact character boundary where
+    user content ends can be located in the formatted string. Everything after
+    that boundary (closing user-turn tokens + assistant generation prompt) is
+    returned as token IDs or raw text.
+
+    Args:
+        tokenizer: A HuggingFace tokenizer with apply_chat_template support.
+        tokenize:  If True (default), return a list of token IDs.
+                   If False, return the raw post-sentinel string.
+
+    Returns:
+        List of token IDs when tokenize=True, or the post-sentinel string
+        when tokenize=False.
+
+    Raises:
+        ValueError: If the tokenizer has no chat template or the sentinel is
+                    not found in the formatted output.
+    """
+    messages = [{"role": "user", "content": _SENTINEL}]
+
+    try:
+        formatted = tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+    except Exception as exc:
+        raise ValueError(f"Tokenizer has no usable chat template: {exc}") from exc
+
+    if _SENTINEL not in formatted:
+        raise ValueError("Sentinel not found in formatted template output.")
+
+    sentinel_end = formatted.index(_SENTINEL) + len(_SENTINEL)
+    post_text = formatted[sentinel_end:]
+
+    if not tokenize:
+        return post_text
+
+    return tokenizer(post_text, add_special_tokens=False)["input_ids"]
+
+
+def _resolve_layers(act_dataset: ActivationDataset, layer: LayerSelection) -> list[int]:
+    if layer == "all":
+        return sorted(act_dataset.activations.keys())
+
+    if isinstance(layer, int):
+        return [layer]
+
+    return sorted(set(layer))
+
+# ---------------------------------------------------------------------------
+# Selectors
+#
+# A TokenSelector identifies which positions in the sequence are relevant.
+# select() always returns (activations, labels, mask) where:
+#   activations  — dict[layer -> (n, seq_len, d_model)], full sequence activations
+#                  for the requested layers
+#   labels       — (n,) bool
+#   mask         — (n, seq_len) bool, True at every selected position
+#
+# Selectors do not reduce. Apply a TokenReducer afterward when the selection
+# implicates more than one position per example.
+# ---------------------------------------------------------------------------
+
 class TokenSelector(ABC):
-    """
-    Selects which token positions from an ActivationDataset contribute to
-    the probe training signal, and reduces them to (n_training, d_model) vectors.
-
-    Kept separate from ActivationCollector because the right token positions
-    depend on the research question, not on how the model is run.
-    """
-
     @abstractmethod
     def select(
         self,
         act_dataset: ActivationDataset,
-        layer: int,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+        layer: LayerSelection,
+    ) -> tuple[dict[int, torch.Tensor], torch.Tensor, torch.Tensor]:
         """
-        Extract training vectors for a single layer.
-
         Args:
             act_dataset: The full activation dataset.
-            layer:       Which layer to select from. Must be a key in
-                         act_dataset.activations.
+            layer:       int, list[int], or "all".
 
         Returns:
-            (activations, labels) where:
-              activations — (n_training, d_model)
-              labels      — (n_training,) bool
-
-            n_training may exceed n_examples when the selector expands each
-            example into multiple token positions (e.g. OffsetSliceTokenSelector).
+            (activations, labels, mask) where activations maps each resolved
+            layer to (n, seq_len, d_model), labels is (n,) bool, and mask is
+            (n, seq_len) bool marking the selected positions.
         """
         ...
 
 
-class LastTokenSelector(TokenSelector):
+class AllTokenSelector(TokenSelector):
     """
-    Takes the last real (non-padding) token from each example.
-
-    Uses attention_mask to find the final non-padding position per row,
-    so it works correctly regardless of padding side.
+    Selects all non-padding tokens. This is the default — other selectors
+    narrow down from here.
     """
 
     def select(
         self,
         act_dataset: ActivationDataset,
-        layer: int,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        acts = act_dataset.activations[layer]  # (n, seq, d)
-        mask = act_dataset.attention_mask      # (n, seq)
+        layer: LayerSelection,
+    ) -> tuple[dict[int, torch.Tensor], torch.Tensor, torch.Tensor]:
+        layers = _resolve_layers(act_dataset, layer)
+        activations = {l: act_dataset.activations[l] for l in layers}
 
-        # cumsum then argmax gives the index of the last 1 in each row.
-        last_indices = mask.long().cumsum(dim=1).argmax(dim=1)  # (n,)
-        selected = acts[torch.arange(len(acts)), last_indices]  # (n, d)
-
-        return selected, act_dataset.labels
+        return activations, act_dataset.labels, act_dataset.attention_mask.bool()
 
 
-class MeanTokenSelector(TokenSelector):
+class LastNTokenSelector(TokenSelector):
     """
-    Mean-pools over non-padding tokens, optionally skipping a leading prefix.
+    Selects the last n real (non-padding) tokens per example.
+
+    When n=1 (default) the mask has exactly one True per row and no reducer
+    is needed. For n>1 apply a TokenReducer to aggregate the selected positions.
 
     Args:
-        skip_prefix: Number of leading real tokens to exclude before pooling.
-                     Useful to drop the instruction portion of a prompt so
-                     only response-side tokens contribute.
+        n: Number of tokens to select from the end of each real sequence.
     """
 
-    def __init__(self, skip_prefix: int = 0):
-        self.skip_prefix = skip_prefix
+    def __init__(self, n: int = 1):
+        if n < 1:
+            raise ValueError(f"n must be >= 1, got {n}")
+        
+        self.n = n
 
     def select(
         self,
         act_dataset: ActivationDataset,
-        layer: int,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        acts = act_dataset.activations[layer]      # (n, seq, d)
-        mask = act_dataset.attention_mask.float()   # (n, seq)
+        layer: LayerSelection,
+    ) -> tuple[dict[int, torch.Tensor], torch.Tensor, torch.Tensor]:
+        layers = _resolve_layers(act_dataset, layer)
+        attn = act_dataset.attention_mask  # (n_ex, seq)
+        n_ex, seq_len = attn.shape
 
-        # Skip over padding tokens and optional prefix tokens
-        if self.skip_prefix > 0:
-            # Zero out the first skip_prefix real tokens per row using cumsum.
-            real_cumsum = mask.long().cumsum(dim=1)           # (n, seq)
-            prefix_mask = (real_cumsum <= self.skip_prefix).float()
-            mask = mask * (1.0 - prefix_mask)
+        real_lengths = attn.long().sum(dim=1)  # (n_ex,)
+        mask = torch.zeros(n_ex, seq_len, dtype=torch.bool)
 
-        mask_3d = mask.unsqueeze(-1)                           # (n, seq, 1)
-        summed = (acts * mask_3d).sum(dim=1)                   # (n, d)
-        counts = mask.sum(dim=1, keepdim=True).clamp(min=1)    # (n, 1)
-
-        return summed / counts, act_dataset.labels
-
-
-class OffsetSliceTokenSelector(TokenSelector):
-    """
-    Treats each token in a fixed range as its own independent training example,
-    expanding the dataset from n_examples to n_examples * slice_len rows.
-
-    Offsets are into the real (non-padding) token sequence, so padding side
-    doesn't matter. This is the pattern from the refusal probe paper, where
-    all post-instruction tokens contribute independently.
-
-    Args:
-        start: Start of the slice within real tokens (inclusive).
-               When anchor="end", negative values count from the last real token.
-        end:   End of the slice (exclusive). None = up to the last real token.
-               When anchor="end", negative values count from the last real token.
-        anchor: "end"   — offsets relative to the last real token (default).
-                "start" — offsets relative to the first real token.
-    """
-
-    def __init__(
-        self,
-        start: int,
-        end: int | None = None,
-        anchor: str = "end",
-    ):
-        if anchor not in ("start", "end"):
-            raise ValueError(f"anchor must be 'start' or 'end', got {anchor!r}")
-
-        self.start = start
-        self.end = end
-        self.anchor = anchor
-
-    def select(
-        self,
-        act_dataset: ActivationDataset,
-        layer: int,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """
-        Returns:
-            (activations, labels, positions) where:
-              activations — (n_training, d_model)
-              labels      — (n_training,) bool
-              positions   — (n_training,) int, offset within the real-token
-                            sequence (0 = first real token). Use this to filter
-                            or group by token position during hyperparameter search.
-        """
-        acts = act_dataset.activations[layer]  # (n, seq, d)
-        mask = act_dataset.attention_mask      # (n, seq)
-        labels = act_dataset.labels            # (n,)
-
-        n, seq_len, d = acts.shape
-        real_lengths = mask.long().sum(dim=1)  # (n,)
-
-        all_vecs: list[torch.Tensor] = []
-        all_labels: list[torch.Tensor] = []
-        all_positions: list[torch.Tensor] = []
-
-        for i in range(n):
+        for i in range(n_ex):
             length = int(real_lengths[i].item())
+            n_take = min(self.n, length)
+            # Real tokens are right-aligned; last n_take are at seq_len - n_take.
+            mask[i, seq_len - n_take :] = True
 
-            if self.anchor == "end":
-                abs_start = length + self.start if self.start < 0 else self.start
-                abs_end = length if self.end is None else (length + self.end if self.end < 0 else self.end)
-            else:
-                abs_start = self.start
-                abs_end = length if self.end is None else self.end
-
-            abs_start = max(0, abs_start)
-            abs_end = min(length, abs_end)
-
-            if abs_start >= abs_end:
-                continue
-
-            # Real tokens are in the rightmost `length` positions (left-padded).
-            pad_offset = seq_len - length
-            seq_start = pad_offset + abs_start
-            seq_end = pad_offset + abs_end
-
-            slice_len = seq_end - seq_start
-            all_vecs.append(acts[i, seq_start:seq_end])                  # (slice_len, d)
-            all_labels.append(labels[i].expand(slice_len))
-            all_positions.append(torch.arange(abs_start, abs_end))       # (slice_len,)
-
-        if not all_vecs:
-            return torch.empty(0, d), torch.empty(0, dtype=torch.bool), torch.empty(0, dtype=torch.long)
-
-        return torch.cat(all_vecs, dim=0), torch.cat(all_labels, dim=0), torch.cat(all_positions, dim=0)
+        activations = {l: act_dataset.activations[l] for l in layers}
+        return activations, act_dataset.labels, mask
 
 
-class AssistantTokenSelector(TokenSelector):
+class PostInstructionTokenSelector(TokenSelector):
     """
-    Mean-pools over the assistant portion of each sequence.
+    Selects the post-instruction tokens at the tail of each prompt.
 
-    Finds the first occurrence of `assistant_token_id` in input_ids per row,
-    then mean-pools over all real tokens from that position to the end of the
-    real sequence. Falls back to pooling over all real tokens if the delimiter
-    is not found with a masked mean.
+    Post-instruction tokens are the fixed template tokens after the user's
+    message — typically a closing user-turn marker plus the generation prompt
+    prefix (e.g. "<|eot_id|><|start_header_id|>assistant<|end_header_id|>").
+    Their count comes from get_post_instruction_tokens.
 
-    The pattern from strategic deception work.
+    Since these are always the last real tokens in a left-padded sequence,
+    the mask marks the last n_post positions in every row.
 
     Args:
-        assistant_token_id: Token ID that marks the start of the assistant turn.
-                            Look this up from your tokenizer before constructing,
-                            e.g. tokenizer.convert_tokens_to_ids("<|im_start|>").
+        tokenizer: HuggingFace tokenizer — used once at construction to count
+                   post-instruction tokens via get_post_instruction_tokens.
     """
 
-    def __init__(self, assistant_token_id: int):
-        self.assistant_token_id = assistant_token_id
+    def __init__(self, tokenizer):
+        post_ids = get_post_instruction_tokens(tokenizer)
+        
+        if not post_ids:
+            raise ValueError("get_post_instruction_tokens returned no tokens for this tokenizer.")
+
+        self.n_post = len(post_ids)
 
     def select(
         self,
         act_dataset: ActivationDataset,
-        layer: int,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        acts = act_dataset.activations[layer]   # (n, seq, d)
-        mask = act_dataset.attention_mask       # (n, seq)
-        input_ids = act_dataset.input_ids       # (n, seq)
+        layer: LayerSelection,
+    ) -> tuple[dict[int, torch.Tensor], torch.Tensor, torch.Tensor]:
+        layers = _resolve_layers(act_dataset, layer)
+        n, seq_len, _ = act_dataset.activations[layers[0]].shape
 
-        n, _, d = acts.shape
-        selected = torch.zeros(n, d)
+        mask = torch.zeros(n, seq_len, dtype=torch.bool)
+        mask[:, seq_len - self.n_post :] = True
 
-        for i in range(n):
-            positions = (input_ids[i] == self.assistant_token_id).nonzero(as_tuple=True)[0]
+        activations = {l: act_dataset.activations[l] for l in layers}
+        return activations, act_dataset.labels, mask
 
-            if len(positions) == 0:
-                real_mask = mask[i].float()
-            else:
-                start = int(positions[0].item())
-                real_mask = mask[i].float().clone()
-                real_mask[:start] = 0.0
 
-            count = real_mask.sum().clamp(min=1)
-            selected[i] = (acts[i] * real_mask.unsqueeze(-1)).sum(dim=0) / count
+# ---------------------------------------------------------------------------
+# Reducers
+#
+# A TokenReducer consumes the (activations, labels, mask) triple from a
+# selector and produces training-ready vectors.
+# ---------------------------------------------------------------------------
 
-        return selected, act_dataset.labels
+class TokenReducer(ABC):
+    @abstractmethod
+    def reduce(
+        self,
+        activations: dict[int, torch.Tensor],
+        labels: torch.Tensor,
+        mask: torch.Tensor,
+    ) -> tuple:
+        """
+        Args:
+            activations: dict[layer -> (n, seq_len, d_model)].
+            labels:      (n,) bool.
+            mask:        (n, seq_len) bool marking selected positions.
+        """
+        ...
+
+
+class MeanReducer(TokenReducer):
+    """
+    Mean-pools selected positions into one vector per example.
+
+    Returns (activations, labels) with shape (n, d_model) per layer.
+    """
+
+    def reduce(
+        self,
+        activations: dict[int, torch.Tensor],
+        labels: torch.Tensor,
+        mask: torch.Tensor,
+    ) -> tuple[dict[int, torch.Tensor], torch.Tensor]:
+        m = mask.float().unsqueeze(-1)                          # (n, seq, 1)
+        counts = mask.float().sum(dim=1, keepdim=True).clamp(min=1)  # (n, 1)
+
+        result = {
+            l: (acts * m).sum(dim=1) / counts
+            for l, acts in activations.items()
+        }
+
+        return result, labels
+
+
+class EachPositionReducer(TokenReducer):
+    """
+    Treats each selected position as its own independent training example.
+
+    Returns (activations, labels, positions) where:
+      activations  — dict[layer -> (n_selected, d_model)]
+      labels       — (n_selected,) bool, one entry per selected position
+      positions    — (n_selected,) int, flat sequence index of each row
+    """
+
+    def reduce(
+        self,
+        activations: dict[int, torch.Tensor],
+        labels: torch.Tensor,
+        mask: torch.Tensor,
+    ) -> tuple[dict[int, torch.Tensor], torch.Tensor, torch.Tensor]:
+        # mask is (n, seq_len); nonzero gives (n_selected, 2) — [example_idx, seq_idx]
+        selected = mask.nonzero(as_tuple=False)  # (n_selected, 2)
+        ex_idx, pos_idx = selected[:, 0], selected[:, 1]
+
+        result = {l: acts[ex_idx, pos_idx] for l, acts in activations.items()}
+        return result, labels[ex_idx], pos_idx

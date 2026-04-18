@@ -6,9 +6,12 @@ from train.activation import (
 )
 from train.token import (
     TokenSelector,
-    LastTokenSelector,
-    MeanTokenSelector,
-    OffsetSliceTokenSelector,
-    AssistantTokenSelector,
+    AllTokenSelector,
+    LastNTokenSelector,
+    PostInstructionTokenSelector,
+    TokenReducer,
+    MeanReducer,
+    EachPositionReducer,
+    get_post_instruction_tokens,
 )
 from train.huggingface import HFActivationCollector
