@@ -1,3 +1,4 @@
+import gc
 import torch
 
 from dataclasses import dataclass, field
@@ -109,6 +110,7 @@ def sweep_layers(
     n_layers = len(train_acts_3d)
     n_train = next(iter(train_acts_3d.values())).shape[0]
     n_dev = next(iter(dev_acts_3d.values())).shape[0]
+    
     print(f"  layers={n_layers}  train={n_train}  dev={n_dev}")
 
     train_reduced = reducer.reduce(train_acts_3d, train_labels, train_mask)
@@ -183,7 +185,7 @@ class MultiModelSweepResult:
             test_acts = collector.collect(test_probe_ds, batch_size, prompt_fn)
             test_accs[model_id] = result.evaluate(test_acts)
 
-            del collector
+            del prompt_fn, collector
             torch.cuda.empty_cache()
 
         return test_accs
@@ -269,7 +271,10 @@ def multi_model_sweep(
         )
 
         print(f"[{model_id}]  freeing GPU memory...", flush=True)
-        del collector
+        # prompt_fn may close over the collector (e.g. capturing collector.tokenizer),
+        # so it must be deleted before collector or the model won't be freed.
+        del prompt_fn, selector, train_acts, dev_acts, collector
+        gc.collect()
         torch.cuda.empty_cache()
         print(f"[{model_id}]  done", flush=True)
 
