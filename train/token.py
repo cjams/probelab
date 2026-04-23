@@ -97,6 +97,18 @@ class TokenSelector(ABC):
         """
         ...
 
+    @abstractmethod
+    def positions(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """Return (batch, seq_len) bool mask of selected positions.
+
+        Used by intervention hooks where no ActivationDataset is available.
+        """
+        ...
+
 
 class AllTokenSelector(TokenSelector):
     """
@@ -113,6 +125,9 @@ class AllTokenSelector(TokenSelector):
         activations = {l: act_dataset.activations[l] for l in layers}
 
         return activations, act_dataset.labels, act_dataset.attention_mask.bool()
+
+    def positions(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
+        return attention_mask.bool()
 
 
 class LastNTokenSelector(TokenSelector):
@@ -153,6 +168,18 @@ class LastNTokenSelector(TokenSelector):
         activations = {l: act_dataset.activations[l] for l in layers}
         return activations, act_dataset.labels, mask
 
+    def positions(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
+        n, seq_len = input_ids.shape
+        real_lengths = attention_mask.long().sum(dim=1)
+        mask = torch.zeros(n, seq_len, dtype=torch.bool, device=input_ids.device)
+
+        for i in range(n):
+            length = int(real_lengths[i].item())
+            n_take = min(self.n, length)
+            mask[i, seq_len - n_take:] = True
+
+        return mask
+
 
 class PostInstructionTokenSelector(TokenSelector):
     """
@@ -192,6 +219,13 @@ class PostInstructionTokenSelector(TokenSelector):
 
         activations = {l: act_dataset.activations[l] for l in layers}
         return activations, act_dataset.labels, mask
+
+    def positions(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
+        n, seq_len = input_ids.shape
+        mask = torch.zeros(n, seq_len, dtype=torch.bool, device=input_ids.device)
+        mask[:, seq_len - self.n_post:] = True
+
+        return mask
 
 
 # ---------------------------------------------------------------------------

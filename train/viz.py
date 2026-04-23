@@ -133,7 +133,7 @@ def plot_multi_model_sweep(
             line_dash="dash",
             line_color="gray",
             opacity=0.4,
-            annotation_text=f"{model_id} best (layer {sweep.best_layer})",
+            annotation_text=f"best (layer {sweep.best_layer})",
             annotation_position="top right",
         )
 
