@@ -39,8 +39,16 @@ class ChatFormatter:
     def format(self, data: Example | ProbeDataset) -> str | list[str]:
         if isinstance(data, ProbeDataset):
             return [self._format_one(ex) for ex in data]
-        
+
         return self._format_one(data)
+
+    def user_content(self, example: Example) -> str:
+        """The instructified user-message text, without chat template or system prompt.
+
+        Use this as the `command` when routing to a judge — it's what the model
+        actually received as the user turn.
+        """
+        return _apply_instructionify(self.instructionify, example)
 
     def _format_one(self, example: Example) -> str:
         messages = []
@@ -101,6 +109,10 @@ class FewShotFormatter:
         if isinstance(data, ProbeDataset):
             return [self._format_one(ex) for ex in data]
         return self._format_one(data)
+
+    def user_content(self, example: Example) -> str:
+        """The instructified query text (without shots or templates)."""
+        return _apply_instructionify(self.instructionify, example)
 
     def _format_one(self, example: Example) -> str:
         parts = []
@@ -197,6 +209,10 @@ class ChatFewShotFormatter:
         if isinstance(data, ProbeDataset):
             return [self._format_one(ex) for ex in data]
         return self._format_one(data)
+
+    def user_content(self, example: Example) -> str:
+        """The instructified query text (without shots, system prompt, or template)."""
+        return _apply_instructionify(self.instructionify, example)
 
     def _format_one(self, example: Example) -> str:
         sp = None
