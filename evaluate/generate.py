@@ -5,9 +5,9 @@ from typing import Callable
 
 import torch
 from tqdm.auto import tqdm
-from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from probelab.dataset.base import Example, ProbeDataset
+from model import HFModelBundle
 
 from .base import RefusalJudge, RefusalScore
 
@@ -44,8 +44,8 @@ class HFResponseCollector:
     three things must match exactly or the responses will not correspond to the
     activation inputs:
 
-    1. model_id — use the same model. A different checkpoint or quantisation
-       level changes both the activations and the generated text.
+    1. model — pass the same HFModelBundle to both. A different checkpoint or
+       quantisation level changes both the activations and the generated text.
 
     2. prompt_fn — pass the identical callable to both collect() calls. The
        prompt_fn encodes instructionify transforms, the chat template, system
@@ -58,40 +58,18 @@ class HFResponseCollector:
        over a labelled completion). Use a separate ChatFormatter instance
        constructed with add_generation_prompt=True for this collector.
 
+    The bundle's tokenizer is expected to be configured for left-padding so
+    batched generation terminates cleanly. load_hf_bundle() sets this by
+    default.
+
     Args:
-        model_id:          HuggingFace repo ID or local path.
-        device:            Device to run inference on.
-        dtype:             Model weight dtype.
-        trust_remote_code: Forwarded to from_pretrained.
+        bundle: Loaded model + tokenizer + model_id.
     """
 
-    def __init__(
-        self,
-        model_id: str,
-        device: str = "cuda",
-        dtype: torch.dtype = torch.bfloat16,
-        trust_remote_code: bool = False,
-    ) -> None:
-        self.model_id = model_id
-
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            model_id,
-            trust_remote_code=trust_remote_code,
-        )
-
-        self.tokenizer.padding_side = "left"
-
-        if self.tokenizer.pad_token is None:
-            self.tokenizer.pad_token = self.tokenizer.eos_token
-
-        self.model = AutoModelForCausalLM.from_pretrained(
-            model_id,
-            torch_dtype=dtype,
-            trust_remote_code=trust_remote_code,
-            device_map=device,
-        )
-        
-        self.model.eval()
+    def __init__(self, bundle: HFModelBundle) -> None:
+        self.model = bundle.model
+        self.tokenizer = bundle.tokenizer
+        self.model_id = bundle.model_id
 
     def collect(
         self,

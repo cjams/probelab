@@ -2,20 +2,11 @@ import torch
 
 from typing import Callable
 from tqdm.auto import tqdm
-from transformers import (
-    AutoModelForCausalLM,
-    AutoModelForImageTextToText,
-    AutoProcessor,
-    AutoTokenizer,
-)
 
 from probelab.dataset.base import Example, ProbeDataset
+from model import HFModelBundle
 from train.activation import ActivationCollector, ActivationDataset, ActivationSpec
 
-# Model ID prefixes that require AutoProcessor + AutoModelForImageTextToText.
-_IMAGE_TEXT_TO_TEXT_PREFIXES = (
-    "google/gemma-4",
-)
 
 class HFActivationCollector(ActivationCollector):
     """
@@ -25,27 +16,19 @@ class HFActivationCollector(ActivationCollector):
     transformer block without requiring manual hooks. Only "residual" is
     supported as a component; use the transformer_lens backend for MLP/attn.
 
-    The tokenizer is configured for left-padding by default so that all real
-    tokens are contiguous at the right edge of each sequence — a requirement
-    for LastTokenSelector and OffsetSliceTokenSelector to work correctly.
+    The bundle's tokenizer is expected to be configured for left-padding so
+    that all real tokens are contiguous at the right edge of each sequence —
+    a requirement for LastTokenSelector and OffsetSliceTokenSelector to work
+    correctly. load_hf_bundle() sets this by default.
 
     Args:
-        model_id:           HuggingFace repo ID or local path.
-        spec:               Declares which layers (and component) to capture.
-        device:             Device to run inference on.
-        dtype:              Model weight dtype. bfloat16 for most modern GPUs.
-        trust_remote_code:  Forwarded to from_pretrained.
-        padding_side:       Tokenizer padding side. "left" (default) keeps real
-                            tokens right-aligned, which token selectors assume.
+        bundle: Loaded model + tokenizer + model_id.
+        spec:   Declares which layers (and component) to capture.
     """
     def __init__(
         self,
-        model_id: str,
+        bundle: HFModelBundle,
         spec: ActivationSpec,
-        trust_remote_code: bool,
-        device: str = "cuda",
-        dtype: torch.dtype = torch.bfloat16,
-        padding_side: str = "left",
     ):
         if spec.component != "residual":
             raise ValueError(
@@ -54,49 +37,10 @@ class HFActivationCollector(ActivationCollector):
                 f"other components."
             )
 
-        self.model_id = model_id
+        self.model = bundle.model
+        self.tokenizer = bundle.tokenizer
+        self.model_id = bundle.model_id
         self.spec = spec
-        self.device = device
-
-        is_image_text = any(model_id.startswith(p) for p in _IMAGE_TEXT_TO_TEXT_PREFIXES)
-
-        if is_image_text:
-            self.tokenizer = AutoProcessor.from_pretrained(
-                model_id,
-                trust_remote_code=trust_remote_code,
-            )
-
-            underlying_tok = self.tokenizer.tokenizer
-            underlying_tok.padding_side = padding_side
-
-            if underlying_tok.pad_token is None:
-                underlying_tok.pad_token = underlying_tok.eos_token
-
-            self.model = AutoModelForImageTextToText.from_pretrained(
-                model_id,
-                dtype=dtype,
-                trust_remote_code=trust_remote_code,
-                device_map=device
-            )
-        else:
-            self.tokenizer = AutoTokenizer.from_pretrained(
-                model_id,
-                trust_remote_code=trust_remote_code,
-            )
-            self.tokenizer.padding_side = padding_side
-
-            # Some tokenizers (e.g. LLaMA) have no pad token by default.
-            if self.tokenizer.pad_token is None:
-                self.tokenizer.pad_token = self.tokenizer.eos_token
-
-            self.model = AutoModelForCausalLM.from_pretrained(
-                model_id,
-                dtype=dtype,
-                trust_remote_code=trust_remote_code,
-                device_map=device
-            )
-
-        self.model.eval()
 
     def collect(
         self,
@@ -141,7 +85,7 @@ class HFActivationCollector(ActivationCollector):
                 padding=True,
                 truncation=True,
                 return_tensors="pt",
-            ).to(self.device)
+            ).to(self.model.device)
 
             with torch.no_grad():
                 output = self.model(
