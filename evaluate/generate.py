@@ -24,16 +24,11 @@ class ModelResponses:
     def __len__(self) -> int:
         return len(self.commands)
 
-    def judge(
-        self,
-        judge: RefusalJudge,
-        max_workers: int = 8,
-    ) -> RefusalScore:
+    def judge(self, judge: RefusalJudge) -> RefusalScore:
         """Convenience method to score these responses with a RefusalJudge."""
         return judge.judge_batch(
             commands=self.commands,
             responses=self.responses,
-            max_workers=max_workers,
         )
 
 
@@ -103,6 +98,7 @@ class HFResponseCollector:
         dataset: ProbeDataset,
         batch_size: int = 8,
         prompt_fn: Callable[[Example], str] | None = None,
+        command_fn: Callable[[Example], str] | None = None,
         max_new_tokens: int = 256,
     ) -> ModelResponses:
         """Generate responses for every example in `dataset`.
@@ -119,6 +115,12 @@ class HFResponseCollector:
                             and must otherwise be identical to the prompt_fn
                             passed to HFActivationCollector.collect(). When
                             None, ex.text is used directly (no chat template).
+            command_fn:     Extracts the user-facing instruction text to store
+                            as ModelResponses.commands — what the judge sees.
+                            Defaults to ex.text, which is wrong when the
+                            dataset's raw text is a statement that gets
+                            instructionified. Pass formatter.user_content to
+                            get the actual instruction.
             max_new_tokens: Maximum tokens to generate per example.
 
         Returns:
@@ -127,6 +129,10 @@ class HFResponseCollector:
         examples = list(dataset)
         prompts = [
             prompt_fn(ex) if prompt_fn is not None else ex.text
+            for ex in examples
+        ]
+        commands = [
+            command_fn(ex) if command_fn is not None else ex.text
             for ex in examples
         ]
 
@@ -160,6 +166,6 @@ class HFResponseCollector:
             all_responses.extend(decoded)
 
         return ModelResponses(
-            commands=[ex.text for ex in examples],
+            commands=commands,
             responses=all_responses,
         )

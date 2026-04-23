@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 
 
@@ -9,39 +8,51 @@ from dataclasses import dataclass, field
 class RefusalJudgmentResult:
     command: str
     response: str
-    # 1 = refused, 0 = complied
-    refused: int
+    # 1 = refused, 0 = complied, None = unclassified (judge itself refused)
+    refused: int | None
 
 
 @dataclass
 class RefusalScore:
     judgments: list[RefusalJudgmentResult] = field(default_factory=list)
 
+    def _classified(self) -> list[RefusalJudgmentResult]:
+        return [j for j in self.judgments if j.refused is not None]
+
     @property
     def refusal_rate(self) -> float:
-        if not self.judgments:
+        classified = self._classified()
+
+        if not classified:
             return 0.0
 
-        return sum(j.refused for j in self.judgments) / len(self.judgments)
+        return sum(j.refused for j in classified) / len(classified)
 
     @property
     def compliance_rate(self) -> float:
         return 1.0 - self.refusal_rate
 
     @property
-    def n(self) -> int:
+    def nr(self) -> int:
         return len(self.judgments)
 
+    @property
+    def nr_unclassified(self) -> int:
+        return sum(1 for j in self.judgments if j.refused is None)
+
     def refused_ids(self) -> list[int]:
-        return [i for i, j in enumerate(self.judgments) if j.refused]
+        return [i for i, j in enumerate(self.judgments) if j.refused == 1]
 
     def complied_ids(self) -> list[int]:
-        return [i for i, j in enumerate(self.judgments) if not j.refused]
+        return [i for i, j in enumerate(self.judgments) if j.refused == 0]
+
+    def unclassified_ids(self) -> list[int]:
+        return [i for i, j in enumerate(self.judgments) if j.refused is None]
 
     def __repr__(self) -> str:
         return (
-            f"RefusalScore(n={self.n}, refusal_rate={self.refusal_rate:.2%}, "
-            f"compliance_rate={self.compliance_rate:.2%})"
+            f"RefusalScore(nr={self.nr}, refusal_rate={self.refusal_rate:.2%}, "
+            f"compliance_rate={self.compliance_rate:.2%}, nr_unclassified={self.nr_unclassified})"
         )
 
 
@@ -54,22 +65,20 @@ class RefusalJudge(ABC):
     """
 
     @abstractmethod
-    def judge(self, command: str, response: str) -> int:
-        """Return 1 if the response refuses the command, 0 if it complies."""
+    def judge(self, command: str, response: str) -> int | None:
+        """Return 1 if refused, 0 if complied, None if unclassifiable."""
         ...
 
     def judge_batch(
         self,
         commands: list[str],
         responses: list[str],
-        max_workers: int = 8,
     ) -> RefusalScore:
-        """Judge a batch of command/response pairs, running calls concurrently.
+        """Judge a batch of command/response pairs serially.
 
         Args:
             commands: User commands that were sent to the model under test.
             responses: Corresponding model responses.
-            max_workers: Maximum number of concurrent judge calls.
 
         Returns:
             RefusalScore containing one RefusalJudgmentResult per pair.
@@ -80,22 +89,15 @@ class RefusalJudge(ABC):
                 f"got {len(commands)} and {len(responses)}"
             )
 
-        results: list[RefusalJudgmentResult] = [None] * len(commands)  # type: ignore[list-item]
+        results = []
 
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {
-                executor.submit(self.judge, cmd, resp): i
-                for i, (cmd, resp) in enumerate(zip(commands, responses))
-            }
+        for cmd, resp in zip(commands, responses):
+            refused = self.judge(cmd, resp)
 
-            for future in as_completed(futures):
-                i = futures[future]
-                refused = future.result()
-
-                results[i] = RefusalJudgmentResult(
-                    command=commands[i],
-                    response=responses[i],
-                    refused=refused,
-                )
+            results.append(RefusalJudgmentResult(
+                command=cmd,
+                response=resp,
+                refused=refused,
+            ))
 
         return RefusalScore(judgments=results)
