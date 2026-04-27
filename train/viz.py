@@ -3,7 +3,11 @@ import plotly.graph_objects as go
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from train.sweep import LayerSweepResult, MultiModelSweepResult
+    from train.sweep import (
+        LayerSweepResult,
+        MultiModelSweepResult,
+        LayerAblationResult,
+    )
 
 
 def plot_layer_sweep(
@@ -66,6 +70,93 @@ def plot_layer_sweep(
         xaxis_title="Layer",
         yaxis_title="Accuracy",
         yaxis=dict(range=[0, 1]),
+    )
+
+    return fig
+
+
+def plot_layer_ablation(
+    result: "LayerAblationResult",
+    title: str = "Ablation Effect by Layer",
+) -> go.Figure:
+    """
+    Line plot of post-ablation metric per layer, with the baseline (no
+    ablation) drawn as a horizontal reference line. The best layer is
+    marked with a vertical guide.
+    """
+    layers = sorted(result.per_layer_metric.keys())
+    values = [result.per_layer_metric[l] for l in layers]
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Scatter(
+        x=layers,
+        y=values,
+        mode="lines+markers",
+        name="ablated",
+    ))
+
+    if result.baseline_metric is not None:
+        fig.add_hline(
+            y=result.baseline_metric,
+            line_dash="dash",
+            line_color="gray",
+            annotation_text=f"baseline = {result.baseline_metric:.3f}",
+            annotation_position="top right",
+        )
+
+    fig.add_vline(
+        x=result.best_layer,
+        line_dash="dot",
+        line_color="crimson",
+        annotation_text=f"best (layer {result.best_layer})",
+        annotation_position="top right",
+    )
+
+    fig.update_layout(
+        title=title,
+        xaxis_title="Layer (direction source)",
+        yaxis_title=f"Metric ({result.objective})",
+    )
+
+    return fig
+
+
+def plot_multi_model_ablation(
+    results: dict[str, "LayerAblationResult"],
+    title: str = "Ablation Effect by Layer (per model)",
+) -> go.Figure:
+    """
+    Overlay one line series per model with each model's baseline as a
+    horizontal reference line.
+    """
+    fig = go.Figure()
+
+    for model_id, result in results.items():
+        layers = sorted(result.per_layer_metric.keys())
+        values = [result.per_layer_metric[l] for l in layers]
+
+        fig.add_trace(go.Scatter(
+            x=layers,
+            y=values,
+            mode="lines+markers",
+            name=model_id,
+            legendgroup=model_id,
+        ))
+
+        if result.baseline_metric is not None:
+            fig.add_hline(
+                y=result.baseline_metric,
+                line_dash="dash",
+                opacity=0.4,
+                annotation_text=f"{model_id} baseline",
+                annotation_position="top right",
+            )
+
+    fig.update_layout(
+        title=title,
+        xaxis_title="Layer (direction source)",
+        yaxis_title="Metric",
     )
 
     return fig

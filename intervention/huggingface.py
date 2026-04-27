@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Callable
 
 import torch
-from tqdm.auto import tqdm
 
 from model import HFModelHandle
 from intervention.base import Intervention, InterventionBackend, apply_intervention
@@ -107,9 +106,8 @@ class HFInterventionBackend(InterventionBackend):
         )
 
         all_responses: list[str] = []
-        n_batches = (len(prompts) + batch_size - 1) // batch_size
 
-        for batch_start in tqdm(range(0, len(prompts), batch_size), total=n_batches, desc="generating", unit="batch"):
+        for batch_start in range(0, len(prompts), batch_size):
             batch_prompts = prompts[batch_start:batch_start + batch_size]
 
             # encoded["input_ids"]:      (batch, seq_len) long

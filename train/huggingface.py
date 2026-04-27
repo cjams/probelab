@@ -1,7 +1,6 @@
 import torch
 
 from typing import Callable
-from tqdm.auto import tqdm
 
 from probelab.dataset.base import Example, ProbeDataset
 from model import HFModelHandle
@@ -76,9 +75,7 @@ class HFActivationCollector(ActivationCollector):
         all_input_ids: list[torch.Tensor] = []
         all_attention_masks: list[torch.Tensor] = []
 
-        n_batches = (len(texts) + batch_size - 1) // batch_size
-
-        for batch_start in tqdm(range(0, len(texts), batch_size), total=n_batches, desc="collecting", unit="batch"):
+        for batch_start in range(0, len(texts), batch_size):
             batch_texts = texts[batch_start : batch_start + batch_size]
 
             encoded = self.tokenizer(

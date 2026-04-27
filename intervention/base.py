@@ -168,8 +168,6 @@ def intervention_sweep(
     Use make_scale_sweep to build a simple scale sweep, or construct the list
     directly to mix modes/directions.
     """
-    from tqdm.auto import tqdm
-
     if hook_layers == "all":
         layers = list(range(1, backend.num_transformer_layers() + 1))
     elif isinstance(hook_layers, int):
@@ -178,6 +176,7 @@ def intervention_sweep(
         layers = list(hook_layers)
 
     baseline_value = None
+    n = len(interventions)
 
     if include_baseline:
         baseline_responses = backend.collect_responses(
@@ -188,10 +187,11 @@ def intervention_sweep(
             **collect_kwargs,
         )
         baseline_value = metric_fn(baseline_responses)
+        print(f"  baseline: {baseline_value:.3f}", flush=True)
 
     metric_values: list[float] = []
 
-    for intervention in tqdm(interventions, desc="intervention sweep"):
+    for i, intervention in enumerate(interventions, 1):
         responses = backend.collect_responses(
             dataset=dataset,
             hook_layers=layers,
@@ -199,7 +199,9 @@ def intervention_sweep(
             intervention=intervention,
             **collect_kwargs,
         )
-        metric_values.append(metric_fn(responses))
+        value = metric_fn(responses)
+        metric_values.append(value)
+        print(f"  [{i}/{n}] scale={intervention.scale:g} mode={intervention.mode}: {value:.3f}", flush=True)
 
     return InterventionSweepResult(
         hook_layers=layers,

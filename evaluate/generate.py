@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from typing import Callable
 
 import torch
-from tqdm.auto import tqdm
 
 from probelab.dataset.base import Example, ProbeDataset
 from model import HFModelHandle, TLModelHandle
@@ -219,9 +218,8 @@ class HFResponseCollector(ResponseCollector):
         ]
 
         all_responses: list[str] = []
-        n_batches = (len(prompts) + batch_size - 1) // batch_size
 
-        for batch_start in tqdm(range(0, len(prompts), batch_size), total=n_batches, desc="generating", unit="batch"):
+        for batch_start in range(0, len(prompts), batch_size):
             batch_prompts = prompts[batch_start : batch_start + batch_size]
 
             encoded = self.tokenizer(
@@ -288,9 +286,8 @@ class TLResponseCollector(ResponseCollector):
         ]
 
         all_responses: list[str] = []
-        n_batches = (len(prompts) + batch_size - 1) // batch_size
 
-        for batch_start in tqdm(range(0, len(prompts), batch_size), total=n_batches, desc="generating", unit="batch"):
+        for batch_start in range(0, len(prompts), batch_size):
             batch_prompts = prompts[batch_start : batch_start + batch_size]
 
             encoded = self.tokenizer(

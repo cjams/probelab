@@ -1,15 +1,21 @@
+from __future__ import annotations
+
 import gc
 import torch
 
 from dataclasses import dataclass, field
-from typing import Callable
-
-from tqdm.auto import tqdm
+from typing import TYPE_CHECKING, Callable, Literal
 
 from probelab.dataset.base import ProbeDataset, Example
 from train.activation import ActivationCollector, ActivationDataset
 from train.probe import Probe, ProbeTrainer
 from train.token import TokenSelector, TokenReducer, LayerSelection
+
+if TYPE_CHECKING:
+    from model import ModelHandle
+    from intervention.base import InterventionBackend, LayerSpec
+    from evaluate.generate import ModelResponses
+    import plotly.graph_objects as go
 
 
 @dataclass
@@ -37,12 +43,6 @@ class LayerSweepResult:
 
         This should only be called once, after the sweep is complete and the
         best configuration has been chosen using dev_accs.
-
-        Args:
-            test_dataset: ActivationDataset for the held-out test split.
-
-        Returns:
-            dict mapping layer index -> test accuracy.
         """
         layers = list(self.probes.keys())
         acts_3d, labels, mask = self.selector.select(test_dataset, layers)
@@ -58,6 +58,165 @@ class LayerSweepResult:
     def plot(self, test_accs: "dict[int, float] | None" = None, title: str = "Probe Accuracy by Layer"):
         from train.viz import plot_layer_sweep
         return plot_layer_sweep(self, test_accs=test_accs, title=title)
+
+    def validate_by_ablation(
+        self,
+        dataset: ProbeDataset,
+        backend: "InterventionBackend",
+        metric_fn: Callable[["ModelResponses"], float],
+        token_selector: TokenSelector | None = None,
+        hook_layers: "LayerSpec" = "all_transformer",
+        component: str | list[str] = "resid_post",
+        scale: float = 1.0,
+        objective: Literal["min", "max"] = "min",
+        include_baseline: bool = True,
+        batch_size: int = 8,
+        max_new_tokens: int = 256,
+        prompt_fn: Callable | None = None,
+        command_fn: Callable | None = None,
+    ) -> "LayerAblationResult":
+        """
+        Re-rank the trained probes by the behavioral effect of ablating each
+        layer's direction across the model.
+
+        For each probe in self.probes, runs a generation pass over `dataset`
+        with the probe's direction ablated (mode="ablate") at every layer in
+        `hook_layers` and every token selected by `token_selector`, then scores
+        the responses with `metric_fn`, then picks the probe that minimises
+        (or maximises) the metric per `objective`.
+
+        Args:
+            dataset:          Held-out behavioural validation set. Generation
+                              runs once per probe, so keep this small.
+            backend:          InterventionBackend (HF or TL) for generation.
+            metric_fn:        ModelResponses -> float. e.g. refusal rate from
+                              a RefusalJudge, but works for any scalar metric.
+            token_selector:   Where the intervention applies in the prompt.
+                              Defaults to AllTokenSelector() (all real tokens).
+            hook_layers:      Which transformer layers to ablate at. "all"
+                              ablates at every layer.
+            component:        Hook point per layer. Pass a list to TL backend
+                              to ablate at multiple residual-stream points
+                              simultaneously. Default is resid_post
+            scale:            Ablation fraction (1.0 = full projection removal).
+            objective:        "min" picks the layer that minimises metric_fn
+                              (typical for "ablation removes the direction's
+                              effect"). "max" picks the maximiser.
+            include_baseline: If True, also runs once with no intervention to
+                              get the metric without ablation.
+            batch_size:       Generation batch size.
+            max_new_tokens:   Per-example generation budget.
+            prompt_fn:        Optional formatter applied to each ProbeDataset example.
+            command_fn:       Optional formatter producing the command text
+                              passed to ModelResponses.commands (useful for downstream
+                              judging tasks)
+
+        Returns:
+            LayerAblationResult with per-layer metrics and the best direction.
+        """
+        from train.token import AllTokenSelector
+        from intervention.base import Intervention
+
+        selector = token_selector if token_selector is not None else AllTokenSelector()
+
+        # Resolve hook_layers up front. The backend's collect_responses signature
+        # is int | list[int]; "all" is a sweep-level convenience that needs to
+        # be expanded against the live model's transformer-block count.
+        if hook_layers == "all":
+            resolved_hook_layers: list[int] = list(range(0, backend.num_transformer_layers() + 1))
+        elif hook_layers == "all_transformer":
+            # TODO: this may be buggy - the intent is to exclude the embedding here but assumes
+            # layer 1 is the first transformer block
+            resolved_hook_layers: list[int] = list(range(1, backend.num_transformer_layers() + 1))
+        elif isinstance(hook_layers, int):
+            resolved_hook_layers = [hook_layers]
+        else:
+            resolved_hook_layers = list(hook_layers)
+
+        baseline_metric: float | None = None
+
+        if include_baseline:
+            baseline_responses = backend.collect_responses(
+                dataset=dataset,
+                hook_layers=resolved_hook_layers,
+                token_selector=selector,
+                intervention=None,
+                batch_size=batch_size,
+                max_new_tokens=max_new_tokens,
+                prompt_fn=prompt_fn,
+                command_fn=command_fn,
+            )
+            baseline_metric = metric_fn(baseline_responses)
+            print(f"  baseline: {baseline_metric:.3f}", flush=True)
+
+        per_layer_metric: dict[int, float] = {}
+        layer_keys = sorted(self.probes.keys())
+        n_layers = len(layer_keys)
+
+        for i, layer in enumerate(layer_keys, 1):
+            direction = self.probes[layer].direction
+
+            intervention = Intervention(
+                direction=direction,
+                scale=scale,
+                mode="ablate",
+                component=component,
+            )
+
+            responses = backend.collect_responses(
+                dataset=dataset,
+                hook_layers=resolved_hook_layers,
+                token_selector=selector,
+                intervention=intervention,
+                batch_size=batch_size,
+                max_new_tokens=max_new_tokens,
+                prompt_fn=prompt_fn,
+                command_fn=command_fn,
+            )
+
+            value = metric_fn(responses)
+            per_layer_metric[layer] = value
+            print(f"  [{i}/{n_layers}] layer {layer}: {value:.3f}", flush=True)
+
+        best_layer = (
+            min(per_layer_metric, key=per_layer_metric.__getitem__)
+            if objective == "min"
+            else max(per_layer_metric, key=per_layer_metric.__getitem__)
+        )
+
+        return LayerAblationResult(
+            per_layer_metric=per_layer_metric,
+            baseline_metric=baseline_metric,
+            best_layer=best_layer,
+            best_direction=self.probes[best_layer].direction,
+            objective=objective,
+        )
+
+
+@dataclass
+class LayerAblationResult:
+    """
+    Output of LayerSweepResult.validate_by_ablation(). Holds per-layer
+    behavioural metric values and identifies the layer whose direction
+    produced the largest ablation delta.
+    """
+    per_layer_metric: dict[int, float]
+    baseline_metric: float | None
+    best_layer: int
+    best_direction: torch.Tensor   # (d_model,)
+    objective: Literal["min", "max"]
+
+    def best_delta(self) -> float:
+        """Signed change at best_layer vs baseline; positive = improvement."""
+        if self.baseline_metric is None:
+            return float("nan")
+
+        delta = self.per_layer_metric[self.best_layer] - self.baseline_metric
+        return -delta if self.objective == "min" else delta
+
+    def plot(self, title: str = "Ablation Effect by Layer") -> "go.Figure":
+        from train.viz import plot_layer_ablation
+        return plot_layer_ablation(self, title=title)
 
 
 def _obj_summary(obj) -> str:
@@ -82,27 +241,6 @@ def sweep_layers(
 ) -> LayerSweepResult:
     """
     Train a probe per layer and pick the best by dev accuracy.
-
-    The selector and reducer define how token positions are collapsed into
-    per-example vectors before probes are fit. The same pipeline is applied
-    to both train and dev splits.
-
-    Args:
-        train_dataset: ActivationDataset for the training split.
-        dev_dataset:   ActivationDataset for the dev (validation) split.
-                       Used to rank layers and select the best probe.
-                       Do not use the test split here.
-        selector:      TokenSelector that identifies which positions to use.
-        reducer:       TokenReducer that collapses selected positions into
-                       (n, d_model) tensors ready for probe training.
-        trainer:       ProbeTrainer that fits one probe per layer.
-        layers:        Which layers to sweep. "all" uses every layer in
-                       train_dataset. Can also be an int or list[int].
-
-    Returns:
-        LayerSweepResult with probes and accuracies for every swept layer,
-        the best layer by dev accuracy, and the selector/reducer stored for
-        use in evaluate().
     """
     train_acts_3d, train_labels, train_mask = selector.select(train_dataset, layers)
     dev_acts_3d, dev_labels, dev_mask = selector.select(dev_dataset, layers)
@@ -110,7 +248,7 @@ def sweep_layers(
     n_layers = len(train_acts_3d)
     n_train = next(iter(train_acts_3d.values())).shape[0]
     n_dev = next(iter(dev_acts_3d.values())).shape[0]
-    
+
     print(f"  layers={n_layers}  train={n_train}  dev={n_dev}")
 
     train_reduced = reducer.reduce(train_acts_3d, train_labels, train_mask)
@@ -124,7 +262,7 @@ def sweep_layers(
     train_accs = {}
     dev_accs = {}
 
-    for layer, probe in tqdm(probes.items(), desc="Evaluating layers", unit="layer"):
+    for layer, probe in probes.items():
         train_preds = probe.predict(train_acts[layer])
         train_accs[layer] = (train_preds == train_labels_r).float().mean().item()
 
@@ -149,14 +287,15 @@ class MultiModelSweepResult:
     """
     Output of multi_model_sweep(). One LayerSweepResult per model.
 
-    Call evaluate() to collect test activations for each model and compute
-    held-out accuracy. The collector_factory stored here is reused so you
-    don't need to pass it again.
+    Stores the model-loading factories so that downstream operations
+    (test-set evaluation, ablation validation) can re-instantiate each model
+    serially, releasing GPU memory between iterations.
     """
 
     results: dict[str, LayerSweepResult]
-    collector_factory: Callable[[str], ActivationCollector] = field(repr=False)
-    prompt_fn_factory: Callable[[ActivationCollector], Callable[[Example], str]] | None = field(default=None, repr=False)
+    handle_factory:    Callable[[str], "ModelHandle"]                                   = field(repr=False)
+    collector_factory: Callable[["ModelHandle"], ActivationCollector]                   = field(repr=False)
+    prompt_fn_factory: Callable[["ModelHandle"], Callable[[Example], str]] | None      = field(default=None, repr=False)
 
     def evaluate(
         self,
@@ -166,29 +305,99 @@ class MultiModelSweepResult:
         """
         Evaluate every model's layer probes on held-out test data.
 
-        Re-instantiates each collector serially to avoid holding multiple
-        models in memory simultaneously. Uses the same prompt_fn_factory
-        that was passed to multi_model_sweep().
-
-        Args:
-            test_probe_ds: ProbeDataset for the held-out test split.
-            batch_size:    Examples per forward pass.
-
-        Returns:
-            dict mapping model_id -> (dict mapping layer index -> test accuracy).
+        Re-instantiates each handle/collector serially to avoid holding
+        multiple models in memory simultaneously.
         """
         test_accs = {}
+        n_models = len(self.results)
 
-        for model_id, result in tqdm(self.results.items(), desc="Evaluating models", unit="model"):
-            collector = self.collector_factory(model_id)
-            prompt_fn = self.prompt_fn_factory(collector) if self.prompt_fn_factory is not None else None
+        for i, (model_id, result) in enumerate(self.results.items(), 1):
+            print(f"\n[{i}/{n_models}] {model_id}  evaluating...", flush=True)
+            handle = self.handle_factory(model_id)
+            collector = self.collector_factory(handle)
+            prompt_fn = self.prompt_fn_factory(handle) if self.prompt_fn_factory is not None else None
+
             test_acts = collector.collect(test_probe_ds, batch_size, prompt_fn)
             test_accs[model_id] = result.evaluate(test_acts)
 
-            del prompt_fn, collector
+            del prompt_fn, collector, handle
+            gc.collect()
             torch.cuda.empty_cache()
 
         return test_accs
+
+    def validate_by_ablation_per_model(
+        self,
+        dataset: ProbeDataset,
+        backend_factory: Callable[["ModelHandle"], "InterventionBackend"],
+        metric_fn: Callable[["ModelResponses"], float],
+        token_selector_factory: Callable[["ModelHandle"], TokenSelector] | None = None,
+        prompt_fn_factory: Callable[["ModelHandle"], Callable[[Example], str]] | None = None,
+        command_fn_factory: Callable[["ModelHandle"], Callable[[Example], str]] | None = None,
+        hook_layers: "LayerSpec" = "all",
+        component: str | list[str] = "resid_post",
+        scale: float = 1.0,
+        objective: Literal["min", "max"] = "min",
+        include_baseline: bool = True,
+        batch_size: int = 8,
+        max_new_tokens: int = 256,
+    ) -> dict[str, LayerAblationResult]:
+        """
+        Run validate_by_ablation for each model serially.
+
+        Loads each model via handle_factory, builds an InterventionBackend
+        via backend_factory, runs the per-model validation, then frees GPU
+        memory before loading the next.
+
+        Override prompt_fn_factory or token_selector_factory if the ablation
+        run needs different formatting/positions than the activation sweep
+        used (e.g. AllTokenSelector for steering vs PostInstructionTokenSelector
+        for extraction). When omitted, prompt_fn_factory falls back to the one
+        stored on this result; token_selector_factory falls back to
+        AllTokenSelector().
+        """
+        from train.token import AllTokenSelector
+
+        prompt_fn_factory = prompt_fn_factory or self.prompt_fn_factory
+        token_selector_factory = token_selector_factory or (lambda _h: AllTokenSelector())
+
+        ablation_results: dict[str, LayerAblationResult] = {}
+        n_models = len(self.results)
+
+        for i, (model_id, sweep_result) in enumerate(self.results.items(), 1):
+            print(f"\n[{i}/{n_models}] {model_id}  loading model...", flush=True)
+            handle = self.handle_factory(model_id)
+            print(f"[{i}/{n_models}] {model_id}  model loaded", flush=True)
+
+            backend = backend_factory(handle)
+            token_selector = token_selector_factory(handle)
+            prompt_fn = prompt_fn_factory(handle) if prompt_fn_factory is not None else None
+            command_fn = command_fn_factory(handle) if command_fn_factory is not None else None
+
+            ablation_results[model_id] = sweep_result.validate_by_ablation(
+                dataset=dataset,
+                backend=backend,
+                metric_fn=metric_fn,
+                token_selector=token_selector,
+                hook_layers=hook_layers,
+                component=component,
+                scale=scale,
+                objective=objective,
+                include_baseline=include_baseline,
+                batch_size=batch_size,
+                max_new_tokens=max_new_tokens,
+                prompt_fn=prompt_fn,
+                command_fn=command_fn,
+            )
+
+            # prompt_fn / command_fn / selector may capture handle.tokenizer,
+            # so they must be deleted before handle for the model to free.
+            del prompt_fn, command_fn, token_selector, backend, handle
+            gc.collect()
+            torch.cuda.empty_cache()
+            print(f"[{i}/{n_models}] {model_id}  done", flush=True)
+
+        return ablation_results
 
     def plot(
         self,
@@ -201,9 +410,10 @@ class MultiModelSweepResult:
 
 def multi_model_sweep(
     model_ids: list[str],
-    collector_factory: Callable[[str], ActivationCollector],
-    selector_factory: Callable[[ActivationCollector], TokenSelector],
-    prompt_fn_factory: Callable[[ActivationCollector], Callable[[Example], str]] | None,
+    handle_factory: Callable[[str], "ModelHandle"],
+    collector_factory: Callable[["ModelHandle"], ActivationCollector],
+    selector_factory: Callable[["ModelHandle"], TokenSelector],
+    prompt_fn_factory: Callable[["ModelHandle"], Callable[[Example], str]] | None,
     reducer: TokenReducer,
     trainer: ProbeTrainer,
     train_probe_ds: ProbeDataset,
@@ -215,30 +425,31 @@ def multi_model_sweep(
     Run sweep_layers() for each model serially, releasing GPU memory between models.
 
     Args:
-        model_ids:          Models to sweep, in order.
-        collector_factory:  Called with a model_id to produce an ActivationCollector.
-                            The collector loads the model; it is deleted after each
-                            model's sweep to free GPU memory.
-        selector_factory:   Called with the live collector to produce a TokenSelector.
-                            Receives the collector so it can access the tokenizer or
-                            other model-specific attributes (e.g. for
-                            PostInstructionTokenSelector).
-        reducer:            Shared across all models.
-        trainer:            Shared across all models.
-        train_probe_ds:     Training split (ProbeDataset).
-        dev_probe_ds:       Dev split used to rank layers. Do not pass test here.
-        layers:             Which layers to sweep per model.
-        batch_size:         Examples per forward pass.
-        prompt_fn_factory:  Optional factory called with the live collector to produce
-                            a per-model prompt formatter. Use this when the prompt
-                            depends on the model's tokenizer or chat template (e.g.
-                            applying ChatFormatter with the model's own tokenizer).
+        model_ids:         Models to sweep, in order.
+        handle_factory:    Called with a model_id to load the model and return
+                           a ModelHandle. The single source of truth for "how
+                           do I load model X" — reused by evaluate() and
+                           validate_by_ablation_per_model().
+        collector_factory: Called with the live handle to produce an
+                           ActivationCollector.
+        selector_factory:  Called with the live handle to produce a
+                           TokenSelector. Receives the handle so it can access
+                           the tokenizer (e.g. for PostInstructionTokenSelector).
+        prompt_fn_factory: Optional, called with the live handle to produce a
+                           per-model prompt formatter. Use this when the prompt
+                           depends on the model's tokenizer / chat template.
+        reducer:           Shared across all models.
+        trainer:           Shared across all models.
+        train_probe_ds:    Training split (ProbeDataset).
+        dev_probe_ds:      Dev split used to rank layers.
+        layers:            Which layers to sweep per model.
+        batch_size:        Examples per forward pass.
 
     Returns:
         MultiModelSweepResult keyed by model_id.
     """
     print(f"Sweeping {len(model_ids)} model(s):")
-    
+
     for mid in model_ids:
         print(f"  {mid}")
 
@@ -250,15 +461,18 @@ def multi_model_sweep(
 
     results = {}
 
-    for model_id in tqdm(model_ids, desc="Sweeping models", unit="model"):
-        print(f"\n[{model_id}]  loading model...", flush=True)
-        collector = collector_factory(model_id)
+    n_models = len(model_ids)
+
+    for i, model_id in enumerate(model_ids, 1):
+        print(f"\n[{i}/{n_models}] {model_id}  loading model...", flush=True)
+        handle = handle_factory(model_id)
         print(f"[{model_id}]  model loaded", flush=True)
 
-        selector = selector_factory(collector)
+        collector = collector_factory(handle)
+        selector = selector_factory(handle)
 
         print(f"[{model_id}]  selector: {_obj_summary(selector)}")
-        prompt_fn = prompt_fn_factory(collector) if prompt_fn_factory is not None else None
+        prompt_fn = prompt_fn_factory(handle) if prompt_fn_factory is not None else None
 
         print(f"[{model_id}]  collecting train activations...", flush=True)
         train_acts = collector.collect(train_probe_ds, batch_size, prompt_fn)
@@ -271,15 +485,16 @@ def multi_model_sweep(
         )
 
         print(f"[{model_id}]  freeing GPU memory...", flush=True)
-        # prompt_fn may close over the collector (e.g. capturing collector.tokenizer),
-        # so it must be deleted before collector or the model won't be freed.
-        del prompt_fn, selector, train_acts, dev_acts, collector
+        # prompt_fn/selector may close over handle.tokenizer, so they must be
+        # deleted before handle for the model weights to actually free.
+        del prompt_fn, selector, train_acts, dev_acts, collector, handle
         gc.collect()
         torch.cuda.empty_cache()
         print(f"[{model_id}]  done", flush=True)
 
     return MultiModelSweepResult(
         results=results,
+        handle_factory=handle_factory,
         collector_factory=collector_factory,
         prompt_fn_factory=prompt_fn_factory,
     )
