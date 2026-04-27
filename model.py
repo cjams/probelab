@@ -7,20 +7,20 @@ import torch
 
 
 @dataclass
-class ModelBundle:
+class ModelHandle:
     model: Any
     tokenizer: Any
     model_id: str
 
 
 @dataclass
-class HFModelBundle(ModelBundle):
+class HFModelHandle(ModelHandle):
     model: Any  # PreTrainedModel
     tokenizer: Any  # PreTrainedTokenizer
 
 
 @dataclass
-class TLModelBundle(ModelBundle):
+class TLModelHandle(ModelHandle):
     model: Any  # HookedTransformer
     tokenizer: Any  # PreTrainedTokenizer
 
@@ -31,17 +31,17 @@ _IMAGE_TEXT_TO_TEXT_PREFIXES = (
 )
 
 
-def load_hf_bundle(
+def load_hf(
     model_id: str,
     dtype: torch.dtype = torch.bfloat16,
     device: str = "cuda",
     trust_remote_code: bool = False,
     padding_side: str = "left",
-) -> HFModelBundle:
+) -> HFModelHandle:
     """
-    Load a HuggingFace model + tokenizer into a single bundle.
+    Load a HuggingFace model + tokenizer into a single handle.
 
-    Centralises the load so the same bundle can be reused across
+    Centralises the load so the same handle can be reused across
     HFActivationCollector, HFResponseCollector, and HFInterventionBackend
     without paying the load cost more than once.
 
@@ -58,7 +58,7 @@ def load_hf_bundle(
                            tokens right-aligned, which token selectors assume.
 
     Returns:
-        HFModelBundle holding the loaded model, tokenizer, and originating
+        HFModelHandle holding the loaded model, tokenizer, and originating
         model_id.
     """
     from transformers import (
@@ -108,4 +108,71 @@ def load_hf_bundle(
 
     model.eval()
 
-    return HFModelBundle(model=model, tokenizer=tokenizer, model_id=model_id)
+    return HFModelHandle(model=model, tokenizer=tokenizer, model_id=model_id)
+
+
+def load_tl(
+    model_id: str,
+    dtype: torch.dtype = torch.bfloat16,
+    device: str = "cuda",
+    padding_side: str = "left",
+    fold_ln: bool = True,
+    center_writing_weights: bool = True,
+    center_unembed: bool = True,
+    **from_pretrained_kwargs,
+) -> TLModelHandle:
+    """
+    Load a TransformerLens HookedTransformer directly.
+
+    HookedTransformer.from_pretrained pulls weights from the HF Hub (or your
+    HF cache) using its own canonical model names. If TL's name for the model
+    differs from the HF repo ID you have cached, it will re-download under
+    the TL name — symlink the cache directories if you want to share weights.
+
+    Args:
+        model_id:               TL-canonical model name (e.g.
+                                "meta-llama/Llama-3.1-8B-Instruct"). Stored
+                                on the returned handle.
+        dtype:                  Model weight dtype.
+        device:                 Device the model is loaded onto.
+        padding_side:           Tokenizer padding side. "left" keeps real
+                                tokens right-aligned.
+        fold_ln:                Fold LayerNorm weights into following linear
+                                layers. TransformerLens default.
+        center_writing_weights: Center the writing weights so the residual
+                                stream has zero mean at each position.
+        center_unembed:         Center the unembedding matrix rows.
+        from_pretrained_kwargs: Additional kwargs forwarded to
+                                HookedTransformer.from_pretrained.
+
+    Returns:
+        TLModelHandle holding the HookedTransformer, its tokenizer, and the
+        TL model_id used for the load.
+    """
+    from transformer_lens import HookedTransformer
+
+    model = HookedTransformer.from_pretrained(
+        model_id,
+        dtype=dtype,
+        device=device,
+        fold_ln=fold_ln,
+        center_writing_weights=center_writing_weights,
+        center_unembed=center_unembed,
+        **from_pretrained_kwargs,
+    )
+
+    tokenizer = model.tokenizer
+    tokenizer.padding_side = padding_side
+
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    # Left-padding semantics in HookedTransformer are driven by
+    # tokenizer.padding_side: when it is "left", forward() auto-infers an
+    # attention_mask from pad_token_id on every call that doesn't pass one
+    # explicitly. That matches HF, where generate() consumes our explicit
+    # attention_mask.
+
+    model.eval()
+
+    return TLModelHandle(model=model, tokenizer=tokenizer, model_id=model_id)

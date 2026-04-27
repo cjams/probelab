@@ -43,11 +43,29 @@ class ActivationSpec:
     targets: ActivationTarget
 
     """
-    Which internal signal to capture.
-    "residual" — residual stream, captured via output_hidden_states in all backends.
-    Other values ("mlp", "attn_out") are reserved for the transformer_lens backend.
+    Which internal signal to capture. Only "resid_post" is portable across
+    backends; the rest require the transformer_lens backend.
+
+    Layer-index convention for all components (matches the hidden_states
+    convention used by HFActivationCollector):
+      - idx 0         -> pre-block-0 state (embedding output).
+      - idx i in 1..N -> the state "around" transformer block i-1. Which
+                         specific state depends on the component.
+
+    Supported values:
+      "resid_post" — residual stream after block i-1.
+                     idx 0 = embedding output. HF + TL.
+      "resid_pre"  — residual entering block i-1.
+                     idx 0 = embedding output (same as "resid_post" at 0).
+                     TL only.
+      "resid_mid"  — residual between attn and mlp of block i-1 (after attn_out
+                     has been added). idx 0 invalid. TL only.
+      "mlp_out"    — mlp's additive contribution from block i-1.
+                     idx 0 invalid. TL only.
+      "attn_out"   — attn's additive contribution from block i-1.
+                     idx 0 invalid. TL only.
     """
-    component: str = "residual"
+    component: str = "resid_post"
 
     def resolve_targets(self, n_states: int) -> list[int]:
         """

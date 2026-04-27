@@ -15,5 +15,6 @@ from train.token import (
     get_post_instruction_tokens,
 )
 from train.huggingface import HFActivationCollector
+from train.transformer_lens import TLActivationCollector
 from train.sweep import LayerSweepResult, sweep_layers, MultiModelSweepResult, multi_model_sweep
 from train.viz import plot_layer_sweep, plot_multi_model_sweep

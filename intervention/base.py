@@ -27,11 +27,61 @@ class Intervention:
       subtract  hidden -= scale * direction                   (steer away from direction)
       ablate    hidden -= scale * (hidden · direction) * direction   (fractional projection ablation;
                                                               scale=1 is full ablation)
+
+    component: which hook point(s) to apply the intervention at. Uses the
+    same vocabulary as ActivationSpec.component. A single string hooks one
+    point per layer; a list hooks every listed component at every hook layer
+    in the same forward pass (so e.g. component=["resid_pre", "resid_mid",
+    "resid_post", "mlp_out", "attn_out"] simultaneously ablates the direction
+    from all five residual-stream hook points at every layer).
+
+    Only "resid_post" is supported by the HuggingFace backend; the
+    TransformerLens backend supports every value ("resid_pre", "resid_mid",
+    "resid_post", "mlp_out", "attn_out") and any combination thereof.
     """
     direction: torch.Tensor
     scale: float
     mode: Mode = "add"
     apply_on: Literal["prefill", "all"] = "all"
+    component: str | list[str] = "resid_post"
+
+    def components(self) -> list[str]:
+        """Normalize self.component to a list of component strings."""
+        return [self.component] if isinstance(self.component, str) else list(self.component)
+
+
+def apply_intervention(
+    hidden: torch.Tensor,       # (batch, seq_len, d_model)
+    mask: torch.Tensor,         # (batch, seq_len) bool
+    direction: torch.Tensor,    # (d_model,)
+    intervention: Intervention,
+) -> None:
+    """Apply intervention in-place at positions where mask is True.
+
+    Shared between HF and TL backends so the semantics of (mode, scale,
+    direction) match exactly across them.
+    """
+    direction = direction.to(hidden.dtype)
+
+    # Boolean indexing flattens the masked positions: (n_selected, d_model).
+    selected = hidden[mask]
+
+    if intervention.mode == "add":
+        # direction broadcasts from (d_model,) to (n_selected, d_model).
+        hidden[mask] = selected + intervention.scale * direction
+
+    elif intervention.mode == "subtract":
+        hidden[mask] = selected - intervention.scale * direction
+
+    elif intervention.mode == "ablate":
+        # (selected @ direction) is (n_selected,); unsqueeze gives (n_selected, 1)
+        # so the outer product with direction is (n_selected, d_model).
+        # scale=1 removes the full projection; scale<1 removes a fraction.
+        proj = (selected @ direction).unsqueeze(-1) * direction
+        hidden[mask] = selected - intervention.scale * proj
+
+    else:
+        raise ValueError(f"Unknown intervention mode: {intervention.mode!r}")
 
 
 class InterventionBackend(ABC):
@@ -81,10 +131,17 @@ def make_scale_sweep(
     scales: list[float],
     mode: Mode = "add",
     apply_on: Literal["prefill", "all"] = "all",
+    component: str | list[str] = "resid_post",
 ) -> list[Intervention]:
-    """Build a list of interventions that share direction/mode and vary by scale."""
+    """Build a list of interventions that share direction/mode/component and vary by scale."""
     return [
-        Intervention(direction=direction, scale=s, mode=mode, apply_on=apply_on)
+        Intervention(
+            direction=direction,
+            scale=s,
+            mode=mode,
+            apply_on=apply_on,
+            component=component,
+        )
         for s in scales
     ]
 

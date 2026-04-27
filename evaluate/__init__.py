@@ -1,6 +1,11 @@
 from .base import RefusalJudgmentResult, RefusalScore, RefusalJudge
 from .claude import ClaudeRefusalJudge
-from .generate import HFResponseCollector, ModelResponses
+from .generate import (
+    HFResponseCollector,
+    ModelResponses,
+    ResponseCollector,
+    TLResponseCollector,
+)
 
 __all__ = [
     "RefusalJudgmentResult",
@@ -8,5 +13,7 @@ __all__ = [
     "RefusalJudge",
     "ClaudeRefusalJudge",
     "HFResponseCollector",
+    "TLResponseCollector",
+    "ResponseCollector",
     "ModelResponses",
 ]

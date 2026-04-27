@@ -5,8 +5,8 @@ from typing import TYPE_CHECKING, Callable
 import torch
 from tqdm.auto import tqdm
 
-from model import HFModelBundle
-from intervention.base import Intervention, InterventionBackend
+from model import HFModelHandle
+from intervention.base import Intervention, InterventionBackend, apply_intervention
 
 if TYPE_CHECKING:
     from dataset.base import ProbeDataset
@@ -55,46 +55,16 @@ def _get_layer_module(model, layer_idx: int):
     return layers[block_idx]
 
 
-def _apply_intervention(
-    hidden: torch.Tensor,       # (batch, seq_len, d_model)
-    mask: torch.Tensor,         # (batch, seq_len) bool
-    direction: torch.Tensor,    # (d_model,)
-    intervention: Intervention,
-) -> None:
-    """Apply intervention in-place at positions where mask is True."""
-    direction = direction.to(hidden.dtype)
-
-    # Boolean indexing flattens the masked positions: (n_selected, d_model).
-    selected = hidden[mask]
-
-    if intervention.mode == "add":
-        # direction broadcasts from (d_model,) to (n_selected, d_model).
-        hidden[mask] = selected + intervention.scale * direction
-
-    elif intervention.mode == "subtract":
-        hidden[mask] = selected - intervention.scale * direction
-
-    elif intervention.mode == "ablate":
-        # (selected @ direction) is (n_selected,); unsqueeze gives (n_selected, 1)
-        # so the outer product with direction is (n_selected, d_model).
-        # scale=1 removes the full projection; scale<1 removes a fraction.
-        proj = (selected @ direction).unsqueeze(-1) * direction
-        hidden[mask] = selected - intervention.scale * proj
-
-    else:
-        raise ValueError(f"Unknown intervention mode: {intervention.mode!r}")
-
-
 class HFInterventionBackend(InterventionBackend):
     """Intervention backend for HuggingFace causal LMs using PyTorch forward hooks.
 
     Args:
-        bundle: Loaded model and tokenizer.
+        handle: Loaded model and tokenizer.
     """
 
-    def __init__(self, bundle: HFModelBundle) -> None:
-        self.model = bundle.model
-        self.tokenizer = bundle.tokenizer
+    def __init__(self, handle: HFModelHandle) -> None:
+        self.model = handle.model
+        self.tokenizer = handle.tokenizer
 
     def num_transformer_layers(self) -> int:
         return len(_get_layers_module(self.model))
@@ -122,6 +92,13 @@ class HFInterventionBackend(InterventionBackend):
             command_fn(ex) if command_fn is not None else ex.text
             for ex in examples
         ]
+
+        if intervention is not None and set(intervention.components()) != {"resid_post"}:
+            raise ValueError(
+                f"HFInterventionBackend only supports component='resid_post', "
+                f"got {intervention.component!r}. Use TLInterventionBackend "
+                f"for other residual-stream positions or component outputs."
+            )
 
         layers = [hook_layers] if isinstance(hook_layers, int) else list(hook_layers)
         layer_modules = (
@@ -205,14 +182,14 @@ class HFInterventionBackend(InterventionBackend):
             if not prefill_done[0]:
                 # pos_mask: (batch, seq_len) bool — which prompt positions to steer.
                 pos_mask = token_selector.positions(input_ids, attention_mask).to(hidden.device)
-                _apply_intervention(hidden, pos_mask, direction, intervention)
+                apply_intervention(hidden, pos_mask, direction, intervention)
                 prefill_done[0] = True
 
             elif intervention.apply_on == "all":
                 # Steer every position of the current autoregressive step
                 # (typically just the one newly generated token).
                 all_mask = torch.ones(hidden.shape[:2], dtype=torch.bool, device=hidden.device)
-                _apply_intervention(hidden, all_mask, direction, intervention)
+                apply_intervention(hidden, all_mask, direction, intervention)
 
             if isinstance(output, tuple):
                 return (hidden,) + output[1:]

@@ -4,7 +4,7 @@ from typing import Callable
 from tqdm.auto import tqdm
 
 from probelab.dataset.base import Example, ProbeDataset
-from model import HFModelBundle
+from model import HFModelHandle
 from train.activation import ActivationCollector, ActivationDataset, ActivationSpec
 
 
@@ -13,33 +13,34 @@ class HFActivationCollector(ActivationCollector):
     Collects residual-stream activations from a HuggingFace causal LM.
 
     Uses output_hidden_states=True to capture the residual stream after each
-    transformer block without requiring manual hooks. Only "residual" is
-    supported as a component; use the transformer_lens backend for MLP/attn.
+    transformer block without requiring manual hooks. Only "resid_post" is
+    supported as a component; use the transformer_lens backend for MLP/attn
+    or for other residual-stream positions (resid_pre, resid_mid).
 
-    The bundle's tokenizer is expected to be configured for left-padding so
+    The handle's tokenizer is expected to be configured for left-padding so
     that all real tokens are contiguous at the right edge of each sequence —
     a requirement for LastTokenSelector and OffsetSliceTokenSelector to work
-    correctly. load_hf_bundle() sets this by default.
+    correctly. load_hf() sets this by default.
 
     Args:
-        bundle: Loaded model + tokenizer + model_id.
+        handle: Loaded model + tokenizer + model_id.
         spec:   Declares which layers (and component) to capture.
     """
     def __init__(
         self,
-        bundle: HFModelBundle,
+        handle: HFModelHandle,
         spec: ActivationSpec,
     ):
-        if spec.component != "residual":
+        if spec.component != "resid_post":
             raise ValueError(
-                f"HFActivationCollector only supports component='residual', "
+                f"HFActivationCollector only supports component='resid_post', "
                 f"got {spec.component!r}. Use the transformer_lens backend for "
                 f"other components."
             )
 
-        self.model = bundle.model
-        self.tokenizer = bundle.tokenizer
-        self.model_id = bundle.model_id
+        self.model = handle.model
+        self.tokenizer = handle.tokenizer
+        self.model_id = handle.model_id
         self.spec = spec
 
     def collect(
