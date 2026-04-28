@@ -115,6 +115,21 @@ class ModelResponses:
     # Decoded model-generated text (new tokens only, prompt stripped).
     responses: list[str]
 
+    # Per-example logits at the first generated position, keyed by the user
+    # label provided via `target_tokens` to the collector (e.g. "true",
+    # "false"). Each tensor is 1D, on CPU, shape (n_examples,). When the
+    # user passes multiple token IDs per key (e.g. {"True", " True",
+    # "true", " true"}), the values are aggregated via logsumexp so the
+    # tensor reads as a single per-example log-score for that class.
+    #
+    # Use this for logit-difference metrics in the style of Marks & Tegmark,
+    # where the causal validation signal is a logit gap between two classes
+    # at the position immediately after the prompt rather than a property
+    # of the decoded text. The partition function Z cancels in the difference,
+    # so (target_logits["true"] - target_logits["false"]) is exactly the
+    # log-odds the model assigns to true-vs-false at that position.
+    target_logits: dict[str, torch.Tensor] | None = None
+
     def __len__(self) -> int:
         return len(self.commands)
 
@@ -124,6 +139,58 @@ class ModelResponses:
             commands=self.commands,
             responses=self.responses,
         )
+
+    def logit_diff(self, pos_key: str, neg_key: str) -> torch.Tensor:
+        """Per-example (target_logits[pos_key] - target_logits[neg_key]).
+
+        Requires target_tokens to have been passed to the collector with
+        both keys populated. Returns a 1D CPU tensor of shape (n_examples,).
+        """
+        if self.target_logits is None:
+            raise ValueError(
+                "target_logits is None — pass target_tokens to the collector "
+                "to populate it."
+            )
+
+        for k in (pos_key, neg_key):
+            if k not in self.target_logits:
+                raise KeyError(
+                    f"target_logits has no key {k!r}; available keys: "
+                    f"{list(self.target_logits.keys())}"
+                )
+
+        return self.target_logits[pos_key] - self.target_logits[neg_key]
+
+
+# Type alias for the target_tokens parameter accepted by collectors and
+# intervention backends. A single int captures one surface form; a list of
+# ints captures a class made up of several tokenizations of the same concept
+# (e.g. {"True", " True", "true", " true"}) and is aggregated via logsumexp
+# at the collector so callers see a single per-example log-score.
+TargetTokens = dict[str, "int | list[int]"]
+
+
+def _aggregate_target_logits(
+    first_scores: torch.Tensor,                          # (batch, vocab)
+    target_tokens: TargetTokens,
+) -> dict[str, torch.Tensor]:
+    """Reduce raw first-position logits down to one value per target class.
+
+    A single token id passes through as the bare logit. A list of ids is
+    combined via logsumexp on the float-cast logits (bf16 logsumexp can lose
+    precision when summands span many orders of magnitude).
+    """
+    out: dict[str, torch.Tensor] = {}
+
+    for key, ids in target_tokens.items():
+        if isinstance(ids, int):
+            out[key] = first_scores[:, ids].float().cpu()
+        else:
+            ids_list = list(ids)
+            selected = first_scores[:, ids_list].float()    # (batch, n_ids)
+            out[key] = torch.logsumexp(selected, dim=-1).cpu()
+
+    return out
 
 
 class ResponseCollector(ABC):
@@ -164,6 +231,7 @@ class ResponseCollector(ABC):
         prompt_fn: Callable[[Example], str] | None = None,
         command_fn: Callable[[Example], str] | None = None,
         max_new_tokens: int = 256,
+        target_tokens: TargetTokens | None = None,
     ) -> ModelResponses:
         """Generate responses for every example in `dataset`.
 
@@ -180,6 +248,12 @@ class ResponseCollector(ABC):
                             as ModelResponses.commands — what the judge sees.
                             Defaults to ex.text.
             max_new_tokens: Maximum tokens to generate per example.
+            target_tokens:  Optional map from user label -> token id (or list
+                            of token ids). When set, ModelResponses.target_logits
+                            is populated with first-generated-position logits
+                            for each label, aggregated via logsumexp when a
+                            list is provided. Useful for logit-difference
+                            metrics that don't depend on decoded text.
         """
         ...
 
@@ -206,6 +280,7 @@ class HFResponseCollector(ResponseCollector):
         prompt_fn: Callable[[Example], str] | None = None,
         command_fn: Callable[[Example], str] | None = None,
         max_new_tokens: int = 256,
+        target_tokens: TargetTokens | None = None,
     ) -> ModelResponses:
         examples = list(dataset)
         prompts = [
@@ -218,6 +293,9 @@ class HFResponseCollector(ResponseCollector):
         ]
 
         all_responses: list[str] = []
+        target_logits_chunks: dict[str, list[torch.Tensor]] | None = (
+            {k: [] for k in target_tokens} if target_tokens is not None else None
+        )
 
         for batch_start in range(0, len(prompts), batch_size):
             batch_prompts = prompts[batch_start : batch_start + batch_size]
@@ -232,12 +310,30 @@ class HFResponseCollector(ResponseCollector):
             prompt_length = encoded["input_ids"].shape[1]
 
             with torch.no_grad():
-                output_ids = self.model.generate(
-                    **encoded,
-                    max_new_tokens=max_new_tokens,
-                    do_sample=False,
-                    pad_token_id=self.tokenizer.pad_token_id,
-                )
+                if target_tokens is not None:
+                    output = self.model.generate(
+                        **encoded,
+                        max_new_tokens=max_new_tokens,
+                        do_sample=False,
+                        pad_token_id=self.tokenizer.pad_token_id,
+                        output_scores=True,
+                        return_dict_in_generate=True,
+                    )
+                    output_ids = output.sequences
+
+                    # output.scores[0]: (batch, vocab) logits at the first
+                    # newly-generated position.
+                    batch_target = _aggregate_target_logits(output.scores[0], target_tokens)
+
+                    for k, t in batch_target.items():
+                        target_logits_chunks[k].append(t)
+                else:
+                    output_ids = self.model.generate(
+                        **encoded,
+                        max_new_tokens=max_new_tokens,
+                        do_sample=False,
+                        pad_token_id=self.tokenizer.pad_token_id,
+                    )
 
             # Slice off the prompt tokens; only decode what the model generated.
             new_tokens = output_ids[:, prompt_length:]
@@ -245,9 +341,15 @@ class HFResponseCollector(ResponseCollector):
 
             all_responses.extend(decoded)
 
+        target_logits = (
+            {k: torch.cat(v) for k, v in target_logits_chunks.items()}
+            if target_logits_chunks is not None else None
+        )
+
         return ModelResponses(
             commands=commands,
             responses=all_responses,
+            target_logits=target_logits,
         )
 
 
@@ -274,7 +376,16 @@ class TLResponseCollector(ResponseCollector):
         prompt_fn: Callable[[Example], str] | None = None,
         command_fn: Callable[[Example], str] | None = None,
         max_new_tokens: int = 256,
+        target_tokens: TargetTokens | None = None,
     ) -> ModelResponses:
+        if target_tokens is not None:
+            raise NotImplementedError(
+                "target_tokens is not yet supported in TLResponseCollector. "
+                "Use HFResponseCollector for logit-based metrics, or extend "
+                "tl_generate_left_padded to surface first-generated-position "
+                "logits."
+            )
+
         examples = list(dataset)
         prompts = [
             prompt_fn(ex) if prompt_fn is not None else ex.text

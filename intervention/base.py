@@ -95,11 +95,17 @@ class InterventionBackend(ABC):
         batch_size: int = 8,
         prompt_fn: Callable | None = None,
         command_fn: Callable | None = None,
+        target_tokens: "dict[str, int | list[int]] | None" = None,
         **generate_kwargs,
     ) -> "ModelResponses":
         """Generate responses with the intervention applied at every layer in
         hook_layers within a single forward pass. The same (direction, scale,
-        mode) is installed as a hook at each listed layer."""
+        mode) is installed as a hook at each listed layer.
+
+        When `target_tokens` is provided, the returned ModelResponses also
+        carries first-generated-position logits aggregated per label, so a
+        metric_fn can score on logit gaps rather than decoded text. Multi-id
+        values are aggregated via logsumexp at the collector."""
         ...
 
     @abstractmethod

@@ -44,7 +44,16 @@ class TLInterventionBackend(InterventionBackend):
         prompt_fn: Callable | None = None,
         command_fn: Callable | None = None,
         max_new_tokens: int = 256,
+        target_tokens: "dict[str, int | list[int]] | None" = None,
     ) -> "ModelResponses":
+        if target_tokens is not None:
+            raise NotImplementedError(
+                "target_tokens is not yet supported in TLInterventionBackend. "
+                "Use HFInterventionBackend for logit-based metrics, or extend "
+                "tl_generate_left_padded to surface first-generated-position "
+                "logits."
+            )
+
         from evaluate.generate import ModelResponses
 
         examples = list(dataset)

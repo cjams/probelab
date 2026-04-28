@@ -68,12 +68,14 @@ class LayerSweepResult:
         hook_layers: "LayerSpec" = "all_transformer",
         component: str | list[str] = "resid_post",
         scale: float = 1.0,
+        mode: Literal["add", "subtract", "ablate"] = "ablate",
         objective: Literal["min", "max"] = "min",
         include_baseline: bool = True,
         batch_size: int = 8,
         max_new_tokens: int = 256,
         prompt_fn: Callable | None = None,
         command_fn: Callable | None = None,
+        target_tokens: "dict[str, int | list[int]] | None" = None,
     ) -> "LayerAblationResult":
         """
         Re-rank the trained probes by the behavioral effect of ablating each
@@ -98,7 +100,12 @@ class LayerSweepResult:
             component:        Hook point per layer. Pass a list to TL backend
                               to ablate at multiple residual-stream points
                               simultaneously. Default is resid_post
-            scale:            Ablation fraction (1.0 = full projection removal).
+            scale:            Magnitude. For mode="ablate" this is the
+                              projection fraction (1.0 = full removal); for
+                              "add" / "subtract" it scales the direction.
+            mode:             How the direction is applied. "ablate" (default,
+                              the Arditi pattern) zeros the projection;
+                              "add" / "subtract" steer along the direction.
             objective:        "min" picks the layer that minimises metric_fn
                               (typical for "ablation removes the direction's
                               effect"). "max" picks the maximiser.
@@ -110,6 +117,10 @@ class LayerSweepResult:
             command_fn:       Optional formatter producing the command text
                               passed to ModelResponses.commands (useful for downstream
                               judging tasks)
+            target_tokens:    Forwarded to the backend; when set, the metric_fn
+                              receives ModelResponses.target_logits populated
+                              with first-generated-position logits per label.
+                              See evaluate.generate.ModelResponses.
 
         Returns:
             LayerAblationResult with per-layer metrics and the best direction.
@@ -145,6 +156,7 @@ class LayerSweepResult:
                 max_new_tokens=max_new_tokens,
                 prompt_fn=prompt_fn,
                 command_fn=command_fn,
+                target_tokens=target_tokens,
             )
             baseline_metric = metric_fn(baseline_responses)
             print(f"  baseline: {baseline_metric:.3f}", flush=True)
@@ -159,7 +171,7 @@ class LayerSweepResult:
             intervention = Intervention(
                 direction=direction,
                 scale=scale,
-                mode="ablate",
+                mode=mode,
                 component=component,
             )
 
@@ -172,6 +184,7 @@ class LayerSweepResult:
                 max_new_tokens=max_new_tokens,
                 prompt_fn=prompt_fn,
                 command_fn=command_fn,
+                target_tokens=target_tokens,
             )
 
             value = metric_fn(responses)
@@ -341,9 +354,11 @@ class MultiModelSweepResult:
         token_selector_factory: Callable[["ModelHandle"], TokenSelector] | None = None,
         prompt_fn_factory: Callable[["ModelHandle"], Callable[[Example], str]] | None = None,
         command_fn_factory: Callable[["ModelHandle"], Callable[[Example], str]] | None = None,
+        target_tokens_factory: Callable[["ModelHandle"], "dict[str, int | list[int]]"] | None = None,
         hook_layers: "LayerSpec" = "all",
         component: str | list[str] = "resid_post",
         scale: float = 1.0,
+        mode: Literal["add", "subtract", "ablate"] = "ablate",
         objective: Literal["min", "max"] = "min",
         include_baseline: bool = True,
         batch_size: int = 8,
@@ -362,6 +377,11 @@ class MultiModelSweepResult:
         for extraction). When omitted, prompt_fn_factory falls back to the one
         stored on this result; token_selector_factory falls back to
         AllTokenSelector().
+
+        target_tokens_factory is a per-model factory because token IDs differ
+        across tokenizers — keys (e.g. "true", "false") stay shared across
+        models so a single metric_fn can read ModelResponses.target_logits
+        without knowing which model produced them.
         """
         from train.token import AllTokenSelector
 
@@ -382,6 +402,7 @@ class MultiModelSweepResult:
             token_selector = token_selector_factory(handle)
             prompt_fn = prompt_fn_factory(handle) if prompt_fn_factory is not None else None
             command_fn = command_fn_factory(handle) if command_fn_factory is not None else None
+            target_tokens = target_tokens_factory(handle) if target_tokens_factory is not None else None
 
             print(f"{prefix}  ablating across {len(sweep_result.probes)} layer directions...", flush=True)
             ablation_results[model_id] = sweep_result.validate_by_ablation(
@@ -392,12 +413,14 @@ class MultiModelSweepResult:
                 hook_layers=hook_layers,
                 component=component,
                 scale=scale,
+                mode=mode,
                 objective=objective,
                 include_baseline=include_baseline,
                 batch_size=batch_size,
                 max_new_tokens=max_new_tokens,
                 prompt_fn=prompt_fn,
                 command_fn=command_fn,
+                target_tokens=target_tokens,
             )
 
             print(f"{prefix}  freeing GPU memory...", flush=True)

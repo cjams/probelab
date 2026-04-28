@@ -78,9 +78,11 @@ class HFInterventionBackend(InterventionBackend):
         prompt_fn: Callable | None = None,
         command_fn: Callable | None = None,
         max_new_tokens: int = 256,
+        target_tokens: "dict[str, int | list[int]] | None" = None,
         **generate_kwargs,
     ) -> "ModelResponses":
-        from evaluate.generate import ModelResponses
+        import torch as _torch
+        from evaluate.generate import ModelResponses, _aggregate_target_logits
 
         examples = list(dataset)
         prompts = [
@@ -106,6 +108,9 @@ class HFInterventionBackend(InterventionBackend):
         )
 
         all_responses: list[str] = []
+        target_logits_chunks: dict[str, list[_torch.Tensor]] | None = (
+            {k: [] for k in target_tokens} if target_tokens is not None else None
+        )
 
         for batch_start in range(0, len(prompts), batch_size):
             batch_prompts = prompts[batch_start:batch_start + batch_size]
@@ -136,14 +141,35 @@ class HFInterventionBackend(InterventionBackend):
 
             try:
                 with torch.no_grad():
-                    # output_ids: (batch, prompt_length + n_new_tokens)
-                    output_ids = self.model.generate(
-                        **encoded,
-                        max_new_tokens=max_new_tokens,
-                        do_sample=False,
-                        pad_token_id=self.tokenizer.pad_token_id,
-                        **generate_kwargs,
-                    )
+                    if target_tokens is not None:
+                        # Capture first-generated-position logits so the
+                        # caller can compute logit-difference metrics. The
+                        # intervention is still applied during prefill via
+                        # the registered hooks.
+                        output = self.model.generate(
+                            **encoded,
+                            max_new_tokens=max_new_tokens,
+                            do_sample=False,
+                            pad_token_id=self.tokenizer.pad_token_id,
+                            output_scores=True,
+                            return_dict_in_generate=True,
+                            **generate_kwargs,
+                        )
+                        output_ids = output.sequences
+
+                        batch_target = _aggregate_target_logits(output.scores[0], target_tokens)
+
+                        for k, t in batch_target.items():
+                            target_logits_chunks[k].append(t)
+                    else:
+                        # output_ids: (batch, prompt_length + n_new_tokens)
+                        output_ids = self.model.generate(
+                            **encoded,
+                            max_new_tokens=max_new_tokens,
+                            do_sample=False,
+                            pad_token_id=self.tokenizer.pad_token_id,
+                            **generate_kwargs,
+                        )
             finally:
                 for h in hook_handles:
                     h.remove()
@@ -153,9 +179,15 @@ class HFInterventionBackend(InterventionBackend):
             decoded = self.tokenizer.batch_decode(new_tokens, skip_special_tokens=True)
             all_responses.extend(decoded)
 
+        target_logits = (
+            {k: _torch.cat(v) for k, v in target_logits_chunks.items()}
+            if target_logits_chunks is not None else None
+        )
+
         return ModelResponses(
             commands=commands,
             responses=all_responses,
+            target_logits=target_logits,
         )
 
     def _register_hook(
