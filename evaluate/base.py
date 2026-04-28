@@ -5,32 +5,33 @@ from dataclasses import dataclass, field
 
 
 @dataclass
-class RefusalJudgmentResult:
+class SemanticJudgment:
     command: str
     response: str
-    # 1 = refused, 0 = complied, None = unclassified (judge itself refused)
-    refused: int | None
+    # 1 = response exhibits the property, 0 = does not, None = unclassified
+    # (judge itself refused, or persistent provider/parse error).
+    label: int | None
 
 
 @dataclass
-class RefusalScore:
-    judgments: list[RefusalJudgmentResult] = field(default_factory=list)
+class SemanticScore:
+    judgments: list[SemanticJudgment] = field(default_factory=list)
 
-    def _classified(self) -> list[RefusalJudgmentResult]:
-        return [j for j in self.judgments if j.refused is not None]
+    def _classified(self) -> list[SemanticJudgment]:
+        return [j for j in self.judgments if j.label is not None]
 
     @property
-    def refusal_rate(self) -> float:
+    def positive_rate(self) -> float:
         classified = self._classified()
 
         if not classified:
             return 0.0
 
-        return sum(j.refused for j in classified) / len(classified)
+        return sum(j.label for j in classified) / len(classified)
 
     @property
-    def compliance_rate(self) -> float:
-        return 1.0 - self.refusal_rate
+    def negative_rate(self) -> float:
+        return 1.0 - self.positive_rate
 
     @property
     def nr(self) -> int:
@@ -38,42 +39,49 @@ class RefusalScore:
 
     @property
     def nr_unclassified(self) -> int:
-        return sum(1 for j in self.judgments if j.refused is None)
+        return sum(1 for j in self.judgments if j.label is None)
 
-    def refused_ids(self) -> list[int]:
-        return [i for i, j in enumerate(self.judgments) if j.refused == 1]
+    def positive_ids(self) -> list[int]:
+        return [i for i, j in enumerate(self.judgments) if j.label == 1]
 
-    def complied_ids(self) -> list[int]:
-        return [i for i, j in enumerate(self.judgments) if j.refused == 0]
+    def negative_ids(self) -> list[int]:
+        return [i for i, j in enumerate(self.judgments) if j.label == 0]
 
     def unclassified_ids(self) -> list[int]:
-        return [i for i, j in enumerate(self.judgments) if j.refused is None]
+        return [i for i, j in enumerate(self.judgments) if j.label is None]
 
     def __repr__(self) -> str:
         return (
-            f"RefusalScore(nr={self.nr}, refusal_rate={self.refusal_rate:.2%}, "
-            f"compliance_rate={self.compliance_rate:.2%}, nr_unclassified={self.nr_unclassified})"
+            f"SemanticScore(nr={self.nr}, positive_rate={self.positive_rate:.2%}, "
+            f"negative_rate={self.negative_rate:.2%}, nr_unclassified={self.nr_unclassified})"
         )
 
 
-class RefusalJudge(ABC):
-    """Abstract judge that classifies whether a model response refuses a command.
+class SemanticJudge(ABC):
+    """Abstract judge that classifies a (command, response) pair against a
+    binary semantic property — refusal, truthfulness, code-vulnerability,
+    sycophancy, etc.
 
-    Subclass this to integrate any LLM provider (API-driven or self-hosted).
-    Only `judge` must be implemented; `judge_batch` has a default concurrent
-    implementation that calls `judge` in parallel.
+    The property-and-backend split is intentional. Subclass `APIJudge` or
+    `LocalJudge` (in `evaluate.api` / `evaluate.local`) to plug in a backend,
+    and parameterize that subclass with property-defining bits (system prompt,
+    tool schema) to specialize it. `ClaudeRefusalJudge` is the worked example.
+
+    Only `judge` is abstract; `judge_batch` has a default serial implementation
+    that calls `judge` per example.
     """
 
     @abstractmethod
     def judge(self, command: str, response: str) -> int | None:
-        """Return 1 if refused, 0 if complied, None if unclassifiable."""
+        """Return 1 if `response` exhibits the property, 0 if it does not,
+        None if unclassifiable."""
         ...
 
     def judge_batch(
         self,
         commands: list[str],
         responses: list[str],
-    ) -> RefusalScore:
+    ) -> SemanticScore:
         """Judge a batch of command/response pairs serially.
 
         Args:
@@ -81,7 +89,7 @@ class RefusalJudge(ABC):
             responses: Corresponding model responses.
 
         Returns:
-            RefusalScore containing one RefusalJudgmentResult per pair.
+            SemanticScore containing one SemanticJudgment per pair.
         """
         if len(commands) != len(responses):
             raise ValueError(
@@ -92,12 +100,12 @@ class RefusalJudge(ABC):
         results = []
 
         for cmd, resp in zip(commands, responses):
-            refused = self.judge(cmd, resp)
+            label = self.judge(cmd, resp)
 
-            results.append(RefusalJudgmentResult(
+            results.append(SemanticJudgment(
                 command=cmd,
                 response=resp,
-                refused=refused,
+                label=label,
             ))
 
-        return RefusalScore(judgments=results)
+        return SemanticScore(judgments=results)

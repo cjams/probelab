@@ -89,8 +89,8 @@ class LayerSweepResult:
             dataset:          Held-out behavioural validation set. Generation
                               runs once per probe, so keep this small.
             backend:          InterventionBackend (HF or TL) for generation.
-            metric_fn:        ModelResponses -> float. e.g. refusal rate from
-                              a RefusalJudge, but works for any scalar metric.
+            metric_fn:        ModelResponses -> float. e.g. positive_rate from
+                              a SemanticJudge, but works for any scalar metric.
             token_selector:   Where the intervention applies in the prompt.
                               Defaults to AllTokenSelector() (all real tokens).
             hook_layers:      Which transformer layers to ablate at. "all"

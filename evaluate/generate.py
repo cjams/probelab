@@ -10,7 +10,7 @@ import torch
 from probelab.dataset.base import Example, ProbeDataset
 from model import HFModelHandle, TLModelHandle
 
-from .base import RefusalJudge, RefusalScore
+from .base import SemanticJudge, SemanticScore
 
 
 def tl_generate_left_padded(
@@ -118,8 +118,8 @@ class ModelResponses:
     def __len__(self) -> int:
         return len(self.commands)
 
-    def judge(self, judge: RefusalJudge) -> RefusalScore:
-        """Convenience method to score these responses with a RefusalJudge."""
+    def judge(self, judge: SemanticJudge) -> SemanticScore:
+        """Convenience method to score these responses with a SemanticJudge."""
         return judge.judge_batch(
             commands=self.commands,
             responses=self.responses,

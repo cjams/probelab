@@ -1,4 +1,6 @@
-from .base import RefusalJudgmentResult, RefusalScore, RefusalJudge
+from .base import SemanticJudgment, SemanticScore, SemanticJudge
+from .api import APIJudge, ClaudeJudge
+from .local import LocalJudge
 from .claude import ClaudeRefusalJudge
 from .generate import (
     HFResponseCollector,
@@ -8,9 +10,12 @@ from .generate import (
 )
 
 __all__ = [
-    "RefusalJudgmentResult",
-    "RefusalScore",
-    "RefusalJudge",
+    "SemanticJudgment",
+    "SemanticScore",
+    "SemanticJudge",
+    "APIJudge",
+    "ClaudeJudge",
+    "LocalJudge",
     "ClaudeRefusalJudge",
     "HFResponseCollector",
     "TLResponseCollector",
