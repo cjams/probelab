@@ -312,17 +312,24 @@ class MultiModelSweepResult:
         n_models = len(self.results)
 
         for i, (model_id, result) in enumerate(self.results.items(), 1):
-            print(f"\n[{i}/{n_models}] {model_id}  evaluating...", flush=True)
+            prefix = f"[{i}/{n_models}] {model_id}"
+
+            print(f"\n{prefix}  loading model...", flush=True)
             handle = self.handle_factory(model_id)
             collector = self.collector_factory(handle)
             prompt_fn = self.prompt_fn_factory(handle) if self.prompt_fn_factory is not None else None
 
+            print(f"{prefix}  collecting test activations...", flush=True)
             test_acts = collector.collect(test_probe_ds, batch_size, prompt_fn)
             test_accs[model_id] = result.evaluate(test_acts)
 
+            print(f"{prefix}  freeing GPU memory...", flush=True)
+            
             del prompt_fn, collector, handle
             gc.collect()
             torch.cuda.empty_cache()
+            
+            print(f"{prefix}  done", flush=True)
 
         return test_accs
 
@@ -365,15 +372,18 @@ class MultiModelSweepResult:
         n_models = len(self.results)
 
         for i, (model_id, sweep_result) in enumerate(self.results.items(), 1):
-            print(f"\n[{i}/{n_models}] {model_id}  loading model...", flush=True)
+            prefix = f"[{i}/{n_models}] {model_id}"
+
+            print(f"\n{prefix}  loading model...", flush=True)
             handle = self.handle_factory(model_id)
-            print(f"[{i}/{n_models}] {model_id}  model loaded", flush=True)
+            print(f"{prefix}  model loaded", flush=True)
 
             backend = backend_factory(handle)
             token_selector = token_selector_factory(handle)
             prompt_fn = prompt_fn_factory(handle) if prompt_fn_factory is not None else None
             command_fn = command_fn_factory(handle) if command_fn_factory is not None else None
 
+            print(f"{prefix}  ablating across {len(sweep_result.probes)} layer directions...", flush=True)
             ablation_results[model_id] = sweep_result.validate_by_ablation(
                 dataset=dataset,
                 backend=backend,
@@ -390,12 +400,13 @@ class MultiModelSweepResult:
                 command_fn=command_fn,
             )
 
+            print(f"{prefix}  freeing GPU memory...", flush=True)
             # prompt_fn / command_fn / selector may capture handle.tokenizer,
             # so they must be deleted before handle for the model to free.
             del prompt_fn, command_fn, token_selector, backend, handle
             gc.collect()
             torch.cuda.empty_cache()
-            print(f"[{i}/{n_models}] {model_id}  done", flush=True)
+            print(f"{prefix}  done", flush=True)
 
         return ablation_results
 
@@ -464,33 +475,35 @@ def multi_model_sweep(
     n_models = len(model_ids)
 
     for i, model_id in enumerate(model_ids, 1):
-        print(f"\n[{i}/{n_models}] {model_id}  loading model...", flush=True)
+        prefix = f"[{i}/{n_models}] {model_id}"
+
+        print(f"\n{prefix}  loading model...", flush=True)
         handle = handle_factory(model_id)
-        print(f"[{model_id}]  model loaded", flush=True)
+        print(f"{prefix}  model loaded", flush=True)
 
         collector = collector_factory(handle)
         selector = selector_factory(handle)
 
-        print(f"[{model_id}]  selector: {_obj_summary(selector)}")
+        print(f"{prefix}  selector: {_obj_summary(selector)}")
         prompt_fn = prompt_fn_factory(handle) if prompt_fn_factory is not None else None
 
-        print(f"[{model_id}]  collecting train activations...", flush=True)
+        print(f"{prefix}  collecting train activations...", flush=True)
         train_acts = collector.collect(train_probe_ds, batch_size, prompt_fn)
-        print(f"[{model_id}]  collecting dev activations...", flush=True)
+        print(f"{prefix}  collecting dev activations...", flush=True)
         dev_acts = collector.collect(dev_probe_ds, batch_size, prompt_fn)
-        print(f"[{model_id}]  collection done", flush=True)
+        print(f"{prefix}  collection done", flush=True)
 
         results[model_id] = sweep_layers(
             train_acts, dev_acts, selector, reducer, trainer, layers
         )
 
-        print(f"[{model_id}]  freeing GPU memory...", flush=True)
+        print(f"{prefix}  freeing GPU memory...", flush=True)
         # prompt_fn/selector may close over handle.tokenizer, so they must be
         # deleted before handle for the model weights to actually free.
         del prompt_fn, selector, train_acts, dev_acts, collector, handle
         gc.collect()
         torch.cuda.empty_cache()
-        print(f"[{model_id}]  done", flush=True)
+        print(f"{prefix}  done", flush=True)
 
     return MultiModelSweepResult(
         results=results,
