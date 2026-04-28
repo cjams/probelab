@@ -39,6 +39,7 @@ class ProbeDataset:
         self.concept = concept
         self.pos_label = pos_label
         self.neg_label = neg_label
+        
         if source_datasets is not None:
             self.source_datasets = source_datasets
         else:
