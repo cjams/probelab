@@ -2,7 +2,7 @@ import torch
 
 from abc import ABC, abstractmethod
 from typing import Literal
-from train.activation import ActivationDataset
+from probelab.train.activation import ActivationDataset
 
 _SENTINEL = "XPROBESENTINEL"
 LayerSelection = int | list[int] | Literal["all", "all_transformer"]

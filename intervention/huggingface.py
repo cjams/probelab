@@ -4,35 +4,68 @@ from typing import TYPE_CHECKING, Callable
 
 import torch
 
-from model import HFModelHandle
-from intervention.base import Intervention, InterventionBackend, apply_intervention
+from probelab.model import HFModelHandle, underlying_tokenizer
+from probelab.intervention.base import Intervention, InterventionBackend, apply_intervention
 
 if TYPE_CHECKING:
-    from dataset.base import ProbeDataset
-    from evaluate.generate import ModelResponses
-    from train.token import TokenSelector
+    from probelab.dataset.base import ProbeDataset
+    from probelab.evaluate.generate import ModelResponses
+    from probelab.train.token import TokenSelector
+
+
+# Known locations of the transformer block list, ordered by specificity so
+# the nested multimodal paths are tried before the bare ones (a wrapper
+# usually has both `model` and inner-language-model attributes; the bare
+# `model` may point at a different submodule).
+_LAYER_PATHS: tuple[tuple[str, ...], ...] = (
+    # Gemma4ForConditionalGeneration:
+    #   .model            -> Gemma4Model (vision_tower + language_model)
+    #     .language_model -> Gemma4TextModel
+    #       .layers       -> nn.ModuleList of blocks
+    ("model", "language_model", "layers"),
+    # Gemma 3 / LLaVA-style multimodal wrappers:
+    #   .language_model.model.layers
+    ("language_model", "model", "layers"),
+    ("language_model", "layers"),
+    # Plain causal LMs.
+    ("model", "layers"),         # LLaMA, Mistral, Qwen, Gemma 1/2/3 base, ...
+    ("transformer", "h"),        # GPT-2
+    ("gpt_neox", "layers"),      # GPT-NeoX
+)
+
+
+def _resolve_attr_path(model, path: tuple[str, ...]):
+    """Walk a dotted attribute path. Return the final value, or None if any
+    intermediate attribute is missing."""
+    obj = model
+
+    for name in path:
+        obj = getattr(obj, name, None)
+
+        if obj is None:
+            return None
+
+    return obj
 
 
 def _get_layers_module(model):
     """Return the nn.ModuleList of transformer blocks.
 
-    Supports LLaMA/Mistral/Qwen/Gemma (model.model.layers), GPT-2
-    (model.transformer.h), and GPT-NeoX (model.gpt_neox.layers).
+    Tries each known nesting in `_LAYER_PATHS` in order. Multimodal wrappers
+    (Gemma 3/4 ConditionalGeneration, LLaVA, ...) are tried first because
+    they typically also have a bare `model` attribute that points at a
+    different submodule.
     """
-    for model_attr in ("model", "transformer", "gpt_neox"):
-        inner = getattr(model, model_attr, None)
-        if inner is None:
-            continue
+    for path in _LAYER_PATHS:
+        layers = _resolve_attr_path(model, path)
 
-        for layers_attr in ("layers", "h", "blocks"):
-            layers = getattr(inner, layers_attr, None)
-            if layers is not None:
-                return layers
+        if layers is not None:
+            return layers
 
     raise ValueError(
         f"Cannot auto-detect transformer blocks for {type(model).__name__}. "
-        f"Supported: LLaMA/Mistral/Qwen/Gemma (model.model.layers), "
-        f"GPT-2 (model.transformer.h), GPT-NeoX (model.gpt_neox.layers)."
+        f"Tried paths: {_LAYER_PATHS}. Add the right path to _LAYER_PATHS, "
+        f"or pass an integer hook_layers if you know the block index."
     )
 
 
@@ -82,7 +115,7 @@ class HFInterventionBackend(InterventionBackend):
         **generate_kwargs,
     ) -> "ModelResponses":
         import torch as _torch
-        from evaluate.generate import ModelResponses, _aggregate_target_logits
+        from probelab.evaluate.generate import ModelResponses, _aggregate_target_logits
 
         examples = list(dataset)
         prompts = [
@@ -112,13 +145,20 @@ class HFInterventionBackend(InterventionBackend):
             {k: [] for k in target_tokens} if target_tokens is not None else None
         )
 
+        # Tokenizer-only attributes (pad_token_id, batch_decode) live on the
+        # underlying tokenizer; for multimodal processors that's
+        # processor.tokenizer, otherwise it's the tokenizer itself.
+        tok = underlying_tokenizer(self.tokenizer)
+
         for batch_start in range(0, len(prompts), batch_size):
             batch_prompts = prompts[batch_start:batch_start + batch_size]
 
             # encoded["input_ids"]:      (batch, seq_len) long
             # encoded["attention_mask"]: (batch, seq_len) long, 1 for real tokens
+            # Pass text by keyword: multimodal processors (e.g. Gemma 4)
+            # bind the first positional arg to `images`.
             encoded = self.tokenizer(
-                batch_prompts,
+                text=batch_prompts,
                 padding=True,
                 truncation=True,
                 return_tensors="pt",
@@ -150,7 +190,7 @@ class HFInterventionBackend(InterventionBackend):
                             **encoded,
                             max_new_tokens=max_new_tokens,
                             do_sample=False,
-                            pad_token_id=self.tokenizer.pad_token_id,
+                            pad_token_id=tok.pad_token_id,
                             output_scores=True,
                             return_dict_in_generate=True,
                             **generate_kwargs,
@@ -167,7 +207,7 @@ class HFInterventionBackend(InterventionBackend):
                             **encoded,
                             max_new_tokens=max_new_tokens,
                             do_sample=False,
-                            pad_token_id=self.tokenizer.pad_token_id,
+                            pad_token_id=tok.pad_token_id,
                             **generate_kwargs,
                         )
             finally:
@@ -176,7 +216,7 @@ class HFInterventionBackend(InterventionBackend):
 
             # Slice off the prompt tokens — only decode the newly generated ones.
             new_tokens = output_ids[:, prompt_length:]
-            decoded = self.tokenizer.batch_decode(new_tokens, skip_special_tokens=True)
+            decoded = tok.batch_decode(new_tokens, skip_special_tokens=True)
             all_responses.extend(decoded)
 
         target_logits = (

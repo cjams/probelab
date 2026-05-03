@@ -1,4 +1,4 @@
-from intervention.base import (
+from probelab.intervention.base import (
     Intervention,
     InterventionBackend,
     InterventionSweepResult,
@@ -6,9 +6,9 @@ from intervention.base import (
     intervention_sweep,
     make_scale_sweep,
 )
-from intervention.huggingface import HFInterventionBackend
-from intervention.transformer_lens import TLInterventionBackend
-from intervention.viz import plot_intervention_sweep
+from probelab.intervention.huggingface import HFInterventionBackend
+from probelab.intervention.transformer_lens import TLInterventionBackend
+from probelab.intervention.viz import plot_intervention_sweep
 
 __all__ = [
     "Intervention",

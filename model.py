@@ -31,6 +31,24 @@ _IMAGE_TEXT_TO_TEXT_PREFIXES = (
 )
 
 
+def underlying_tokenizer(tokenizer_or_processor):
+    """Return the underlying PreTrainedTokenizer.
+
+    For multimodal models loaded via AutoProcessor (e.g. Gemma 4),
+    `handle.tokenizer` is actually a Processor that exposes the real
+    tokenizer at `processor.tokenizer`. For plain models it's already
+    the tokenizer. This helper unwraps the former and is a no-op for the
+    latter, so callers can uniformly access tokenizer-only attributes
+    like `pad_token_id`, `eos_token_id`, and `batch_decode`.
+
+    Note: for *text encoding* the wrapping processor is fine and even
+    necessary (it handles processor-specific preprocessing); pass text
+    by keyword (`text=...`) so multimodal processors don't bind it to
+    `images`. This helper is for tokenizer-only operations only.
+    """
+    return getattr(tokenizer_or_processor, "tokenizer", tokenizer_or_processor)
+
+
 def load_hf(
     model_id: str,
     dtype: torch.dtype = torch.bfloat16,

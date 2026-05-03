@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 import plotly.graph_objects as go
 
 if TYPE_CHECKING:
-    from intervention.base import InterventionSweepResult
+    from probelab.intervention.base import InterventionSweepResult
 
 
 def plot_intervention_sweep(

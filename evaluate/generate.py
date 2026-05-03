@@ -8,7 +8,7 @@ from typing import Callable
 import torch
 
 from probelab.dataset.base import Example, ProbeDataset
-from model import HFModelHandle, TLModelHandle
+from probelab.model import HFModelHandle, TLModelHandle, underlying_tokenizer
 
 from .base import SemanticJudge, SemanticScore
 
@@ -297,11 +297,18 @@ class HFResponseCollector(ResponseCollector):
             {k: [] for k in target_tokens} if target_tokens is not None else None
         )
 
+        # Tokenizer-only attributes (pad_token_id, batch_decode) live on the
+        # underlying tokenizer, which is `self.tokenizer.tokenizer` for
+        # multimodal AutoProcessors and `self.tokenizer` for plain ones.
+        tok = underlying_tokenizer(self.tokenizer)
+
         for batch_start in range(0, len(prompts), batch_size):
             batch_prompts = prompts[batch_start : batch_start + batch_size]
 
+            # Pass text by keyword: multimodal processors (e.g. Gemma 4)
+            # bind the first positional arg to `images`.
             encoded = self.tokenizer(
-                batch_prompts,
+                text=batch_prompts,
                 padding=True,
                 truncation=True,
                 return_tensors="pt",
@@ -315,7 +322,7 @@ class HFResponseCollector(ResponseCollector):
                         **encoded,
                         max_new_tokens=max_new_tokens,
                         do_sample=False,
-                        pad_token_id=self.tokenizer.pad_token_id,
+                        pad_token_id=tok.pad_token_id,
                         output_scores=True,
                         return_dict_in_generate=True,
                     )
@@ -332,12 +339,12 @@ class HFResponseCollector(ResponseCollector):
                         **encoded,
                         max_new_tokens=max_new_tokens,
                         do_sample=False,
-                        pad_token_id=self.tokenizer.pad_token_id,
+                        pad_token_id=tok.pad_token_id,
                     )
 
             # Slice off the prompt tokens; only decode what the model generated.
             new_tokens = output_ids[:, prompt_length:]
-            decoded = self.tokenizer.batch_decode(new_tokens, skip_special_tokens=True)
+            decoded = tok.batch_decode(new_tokens, skip_special_tokens=True)
 
             all_responses.extend(decoded)
 
@@ -397,12 +404,13 @@ class TLResponseCollector(ResponseCollector):
         ]
 
         all_responses: list[str] = []
+        tok = underlying_tokenizer(self.tokenizer)
 
         for batch_start in range(0, len(prompts), batch_size):
             batch_prompts = prompts[batch_start : batch_start + batch_size]
 
             encoded = self.tokenizer(
-                batch_prompts,
+                text=batch_prompts,
                 padding=True,
                 truncation=True,
                 return_tensors="pt",
@@ -415,12 +423,12 @@ class TLResponseCollector(ResponseCollector):
                 tokens=encoded["input_ids"],
                 attention_mask=encoded["attention_mask"],
                 max_new_tokens=max_new_tokens,
-                eos_token_id=self.tokenizer.eos_token_id,
-                pad_token_id=self.tokenizer.pad_token_id,
+                eos_token_id=tok.eos_token_id,
+                pad_token_id=tok.pad_token_id,
             )
 
             new_tokens = output_ids[:, prompt_length:]
-            decoded = self.tokenizer.batch_decode(new_tokens, skip_special_tokens=True)
+            decoded = tok.batch_decode(new_tokens, skip_special_tokens=True)
 
             all_responses.extend(decoded)
 

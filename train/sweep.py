@@ -7,14 +7,14 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Callable, Literal
 
 from probelab.dataset.base import ProbeDataset, Example
-from train.activation import ActivationCollector, ActivationDataset
-from train.probe import Probe, ProbeTrainer
-from train.token import TokenSelector, TokenReducer, LayerSelection
+from probelab.train.activation import ActivationCollector, ActivationDataset
+from probelab.train.probe import Probe, ProbeTrainer
+from probelab.train.token import TokenSelector, TokenReducer, LayerSelection
 
 if TYPE_CHECKING:
-    from model import ModelHandle
-    from intervention.base import InterventionBackend, LayerSpec
-    from evaluate.generate import ModelResponses
+    from probelab.model import ModelHandle
+    from probelab.intervention.base import InterventionBackend, LayerSpec
+    from probelab.evaluate.generate import ModelResponses
     import plotly.graph_objects as go
 
 
@@ -56,7 +56,7 @@ class LayerSweepResult:
         }
 
     def plot(self, test_accs: "dict[int, float] | None" = None, title: str = "Probe Accuracy by Layer"):
-        from train.viz import plot_layer_sweep
+        from probelab.train.viz import plot_layer_sweep
         return plot_layer_sweep(self, test_accs=test_accs, title=title)
 
     def validate_by_ablation(
@@ -95,8 +95,8 @@ class LayerSweepResult:
                               a SemanticJudge, but works for any scalar metric.
             token_selector:   Where the intervention applies in the prompt.
                               Defaults to AllTokenSelector() (all real tokens).
-            hook_layers:      Which transformer layers to ablate at. "all"
-                              ablates at every layer.
+            hook_layers:      Which transformer layers to ablate at.
+                              "all_transformer" ablates at every layer (1..N).
             component:        Hook point per layer. Pass a list to TL backend
                               to ablate at multiple residual-stream points
                               simultaneously. Default is resid_post
@@ -125,19 +125,19 @@ class LayerSweepResult:
         Returns:
             LayerAblationResult with per-layer metrics and the best direction.
         """
-        from train.token import AllTokenSelector
-        from intervention.base import Intervention
+        from probelab.train.token import AllTokenSelector
+        from probelab.intervention.base import Intervention
 
         selector = token_selector if token_selector is not None else AllTokenSelector()
 
-        # Resolve hook_layers up front. The backend's collect_responses signature
-        # is int | list[int]; "all" is a sweep-level convenience that needs to
-        # be expanded against the live model's transformer-block count.
-        if hook_layers == "all":
-            resolved_hook_layers: list[int] = list(range(0, backend.num_transformer_layers() + 1))
-        elif hook_layers == "all_transformer":
-            # TODO: this may be buggy - the intent is to exclude the embedding here but assumes
-            # layer 1 is the first transformer block
+        # Resolve hook_layers up front. The backend's collect_responses
+        # signature is int | list[int]; "all_transformer" is a sweep-level
+        # convenience that expands to range(1, N+1) against the live model's
+        # transformer-block count. The embedding (index 0) is not hookable
+        # in the HF backend and is a passthrough in TL, which is why this
+        # path doesn't accept the looser "all" literal that the
+        # activation-collection vocabulary uses.
+        if hook_layers == "all_transformer":
             resolved_hook_layers: list[int] = list(range(1, backend.num_transformer_layers() + 1))
         elif isinstance(hook_layers, int):
             resolved_hook_layers = [hook_layers]
@@ -228,7 +228,7 @@ class LayerAblationResult:
         return -delta if self.objective == "min" else delta
 
     def plot(self, title: str = "Ablation Effect by Layer") -> "go.Figure":
-        from train.viz import plot_layer_ablation
+        from probelab.train.viz import plot_layer_ablation
         return plot_layer_ablation(self, title=title)
 
 
@@ -355,7 +355,7 @@ class MultiModelSweepResult:
         prompt_fn_factory: Callable[["ModelHandle"], Callable[[Example], str]] | None = None,
         command_fn_factory: Callable[["ModelHandle"], Callable[[Example], str]] | None = None,
         target_tokens_factory: Callable[["ModelHandle"], "dict[str, int | list[int]]"] | None = None,
-        hook_layers: "LayerSpec" = "all",
+        hook_layers: "LayerSpec" = "all_transformer",
         component: str | list[str] = "resid_post",
         scale: float = 1.0,
         mode: Literal["add", "subtract", "ablate"] = "ablate",
@@ -383,7 +383,7 @@ class MultiModelSweepResult:
         models so a single metric_fn can read ModelResponses.target_logits
         without knowing which model produced them.
         """
-        from train.token import AllTokenSelector
+        from probelab.train.token import AllTokenSelector
 
         prompt_fn_factory = prompt_fn_factory or self.prompt_fn_factory
         token_selector_factory = token_selector_factory or (lambda _h: AllTokenSelector())
@@ -438,7 +438,7 @@ class MultiModelSweepResult:
         test_accs: "dict[str, dict[int, float]] | None" = None,
         title: str = "Probe Accuracy by Layer",
     ):
-        from train.viz import plot_multi_model_sweep
+        from probelab.train.viz import plot_multi_model_sweep
         return plot_multi_model_sweep(self, test_accs=test_accs, title=title)
 
 

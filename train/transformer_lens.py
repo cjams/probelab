@@ -3,8 +3,8 @@ import torch
 from typing import Callable
 
 from probelab.dataset.base import Example, ProbeDataset
-from model import TLModelHandle
-from train.activation import ActivationCollector, ActivationDataset, ActivationSpec
+from probelab.model import TLModelHandle, underlying_tokenizer
+from probelab.train.activation import ActivationCollector, ActivationDataset, ActivationSpec
 
 
 # Per-component hook-name resolver.
@@ -119,7 +119,7 @@ class TLActivationCollector(ActivationCollector):
             batch_texts = texts[batch_start : batch_start + batch_size]
 
             encoded = self.tokenizer(
-                batch_texts,
+                text=batch_texts,
                 padding=True,
                 truncation=True,
                 return_tensors="pt",
@@ -139,7 +139,7 @@ class TLActivationCollector(ActivationCollector):
             all_input_ids.append(encoded["input_ids"].cpu())
             all_attention_masks.append(encoded["attention_mask"].cpu())
 
-        input_ids = _pad_and_stack(all_input_ids, pad_value=self.tokenizer.pad_token_id)
+        input_ids = _pad_and_stack(all_input_ids, pad_value=underlying_tokenizer(self.tokenizer).pad_token_id)
         attention_mask = _pad_and_stack(all_attention_masks, pad_value=0)
 
         activations: dict[int, torch.Tensor] = {

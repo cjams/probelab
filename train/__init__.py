@@ -1,10 +1,10 @@
-from train.activation import (
+from probelab.train.activation import (
     ActivationTarget,
     ActivationSpec,
     ActivationDataset,
     ActivationCollector,
 )
-from train.token import (
+from probelab.train.token import (
     TokenSelector,
     AllTokenSelector,
     LastNTokenSelector,
@@ -14,16 +14,16 @@ from train.token import (
     EachPositionReducer,
     get_post_instruction_tokens,
 )
-from train.huggingface import HFActivationCollector
-from train.transformer_lens import TLActivationCollector
-from train.sweep import (
+from probelab.train.huggingface import HFActivationCollector
+from probelab.train.transformer_lens import TLActivationCollector
+from probelab.train.sweep import (
     LayerSweepResult,
     LayerAblationResult,
     sweep_layers,
     MultiModelSweepResult,
     multi_model_sweep,
 )
-from train.viz import (
+from probelab.train.viz import (
     plot_layer_sweep,
     plot_layer_ablation,
     plot_multi_model_sweep,

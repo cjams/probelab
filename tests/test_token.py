@@ -1,8 +1,8 @@
 import pytest
 import torch
 
-from train.activation import ActivationDataset, ActivationSpec
-from train.token import (
+from probelab.train.activation import ActivationDataset, ActivationSpec
+from probelab.train.token import (
     AllTokenSelector,
     EachPositionReducer,
     LastNTokenSelector,

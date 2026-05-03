@@ -5,6 +5,7 @@ from probelab.dataset.loaders.legal_activities import LegalActivitiesLoader
 from probelab.dataset.loaders.tdc2023 import TDC2023Loader
 from probelab.dataset.loaders.malicious_instruct import MaliciousInstructLoader
 from probelab.dataset.loaders.alpaca import AlpacaLoader
+from probelab.dataset.loaders.geometry_of_truth import GeometryOfTruthLoader
 
 __all__ = [
     "HarmBenchLoader",
@@ -14,4 +15,5 @@ __all__ = [
     "TDC2023Loader",
     "MaliciousInstructLoader",
     "AlpacaLoader",
+    "GeometryOfTruthLoader",
 ]

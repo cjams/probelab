@@ -3,8 +3,8 @@ import torch
 from typing import Callable
 
 from probelab.dataset.base import Example, ProbeDataset
-from model import HFModelHandle
-from train.activation import ActivationCollector, ActivationDataset, ActivationSpec
+from probelab.model import HFModelHandle, underlying_tokenizer
+from probelab.train.activation import ActivationCollector, ActivationDataset, ActivationSpec
 
 
 class HFActivationCollector(ActivationCollector):
@@ -78,8 +78,11 @@ class HFActivationCollector(ActivationCollector):
         for batch_start in range(0, len(texts), batch_size):
             batch_texts = texts[batch_start : batch_start + batch_size]
 
+            # Pass text by keyword: multimodal processors (e.g. Gemma 4)
+            # bind the first positional arg to `images`, which leaves
+            # `text=None` and crashes inside the processor.
             encoded = self.tokenizer(
-                batch_texts,
+                text=batch_texts,
                 padding=True,
                 truncation=True,
                 return_tensors="pt",
@@ -108,7 +111,7 @@ class HFActivationCollector(ActivationCollector):
 
         # Stack batches. Sequences may differ in length across batches if the
         # longest sequence varies — pad to the global max before stacking.
-        input_ids = _pad_and_stack(all_input_ids, pad_value=self.tokenizer.pad_token_id)
+        input_ids = _pad_and_stack(all_input_ids, pad_value=underlying_tokenizer(self.tokenizer).pad_token_id)
         attention_mask = _pad_and_stack(all_attention_masks, pad_value=0)
 
         activations: dict[int, torch.Tensor] = {}

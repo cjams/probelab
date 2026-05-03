@@ -7,15 +7,22 @@ from typing import TYPE_CHECKING, Callable, Literal
 import torch
 
 if TYPE_CHECKING:
-    from dataset.base import ProbeDataset
-    from evaluate.generate import ModelResponses
-    from train.token import TokenSelector
+    from probelab.dataset.base import ProbeDataset
+    from probelab.evaluate.generate import ModelResponses
+    from probelab.train.token import TokenSelector
     import plotly.graph_objects as go
 
 
 Mode = Literal["add", "subtract", "ablate"]
 
-LayerSpec = int | list[int] | Literal["all"]
+# Only "all_transformer" is accepted (not "all") because hooks can only be
+# installed on transformer blocks 1..N. The embedding (hidden_states[0]) is
+# unhookable in HF and a no-op passthrough in TL, so a hypothetical "all"
+# would mean exactly the same thing — and the activation-collection vocabulary
+# (where "all" can additionally include the embedding/positional readouts)
+# would make "all" misleading here. Forcing the explicit name keeps the two
+# vocabularies from drifting into each other.
+LayerSpec = int | list[int] | Literal["all_transformer"]
 
 
 @dataclass
@@ -128,7 +135,7 @@ class InterventionSweepResult:
     baseline_value: float | None = None
 
     def plot(self, **kwargs) -> "go.Figure":
-        from intervention.viz import plot_intervention_sweep
+        from probelab.intervention.viz import plot_intervention_sweep
         return plot_intervention_sweep(self, **kwargs)
 
 
@@ -166,15 +173,15 @@ def intervention_sweep(
     collect metric values.
 
     Args:
-        hook_layers: Single layer index, list of layers, or "all" to hook every
-                     transformer layer (1..N). For each intervention, the same
-                     (direction, scale, mode) is applied at every listed layer
-                     within one forward pass.
+        hook_layers: Single layer index, list of layers, or "all_transformer"
+                     to hook every transformer layer (1..N). For each
+                     intervention, the same (direction, scale, mode) is
+                     applied at every listed layer within one forward pass.
 
     Use make_scale_sweep to build a simple scale sweep, or construct the list
     directly to mix modes/directions.
     """
-    if hook_layers == "all":
+    if hook_layers == "all_transformer":
         layers = list(range(1, backend.num_transformer_layers() + 1))
     elif isinstance(hook_layers, int):
         layers = [hook_layers]

@@ -3,7 +3,7 @@ import plotly.graph_objects as go
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from train.sweep import (
+    from probelab.train.sweep import (
         LayerSweepResult,
         MultiModelSweepResult,
         LayerAblationResult,

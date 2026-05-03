@@ -4,15 +4,15 @@ from typing import TYPE_CHECKING, Callable
 
 import torch
 
-from model import TLModelHandle
-from intervention.base import Intervention, InterventionBackend, apply_intervention
-from evaluate.generate import tl_generate_left_padded
-from train.transformer_lens import resolve_hook_name
+from probelab.model import TLModelHandle, underlying_tokenizer
+from probelab.intervention.base import Intervention, InterventionBackend, apply_intervention
+from probelab.evaluate.generate import tl_generate_left_padded
+from probelab.train.transformer_lens import resolve_hook_name
 
 if TYPE_CHECKING:
-    from dataset.base import ProbeDataset
-    from evaluate.generate import ModelResponses
-    from train.token import TokenSelector
+    from probelab.dataset.base import ProbeDataset
+    from probelab.evaluate.generate import ModelResponses
+    from probelab.train.token import TokenSelector
 
 
 class TLInterventionBackend(InterventionBackend):
@@ -54,7 +54,7 @@ class TLInterventionBackend(InterventionBackend):
                 "logits."
             )
 
-        from evaluate.generate import ModelResponses
+        from probelab.evaluate.generate import ModelResponses
 
         examples = list(dataset)
         prompts = [
@@ -69,12 +69,13 @@ class TLInterventionBackend(InterventionBackend):
         layers = [hook_layers] if isinstance(hook_layers, int) else list(hook_layers)
 
         all_responses: list[str] = []
+        tok = underlying_tokenizer(self.tokenizer)
 
         for batch_start in range(0, len(prompts), batch_size):
             batch_prompts = prompts[batch_start:batch_start + batch_size]
 
             encoded = self.tokenizer(
-                batch_prompts,
+                text=batch_prompts,
                 padding=True,
                 truncation=True,
                 return_tensors="pt",
@@ -98,13 +99,13 @@ class TLInterventionBackend(InterventionBackend):
                 tokens=encoded["input_ids"],
                 attention_mask=encoded["attention_mask"],
                 max_new_tokens=max_new_tokens,
-                eos_token_id=self.tokenizer.eos_token_id,
-                pad_token_id=self.tokenizer.pad_token_id,
+                eos_token_id=tok.eos_token_id,
+                pad_token_id=tok.pad_token_id,
                 fwd_hooks=hooks,
             )
 
             new_tokens = output_ids[:, prompt_length:]
-            decoded = self.tokenizer.batch_decode(new_tokens, skip_special_tokens=True)
+            decoded = tok.batch_decode(new_tokens, skip_special_tokens=True)
             all_responses.extend(decoded)
 
         return ModelResponses(
