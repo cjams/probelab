@@ -19,7 +19,9 @@ def get_post_instruction_tokens(tokenizer, tokenize: bool = True) -> list[int] |
     returned as token IDs or raw text.
 
     Args:
-        tokenizer: A HuggingFace tokenizer with apply_chat_template support.
+        tokenizer: A HuggingFace tokenizer (or AutoProcessor for multimodal
+                   models — unwrapped via `underlying_tokenizer`) with
+                   apply_chat_template support.
         tokenize:  If True (default), return a list of token IDs.
                    If False, return the raw post-sentinel string.
 
@@ -31,10 +33,17 @@ def get_post_instruction_tokens(tokenizer, tokenize: bool = True) -> list[int] |
         ValueError: If the tokenizer has no chat template or the sentinel is
                     not found in the formatted output.
     """
+    # Multimodal processors (Gemma 4, etc.) have an apply_chat_template that
+    # adds image-token scaffolding the bare tokenizer doesn't, and reject
+    # positional text= calls. Unwrap to the underlying tokenizer so this
+    # path is identical for plain and multimodal models.
+    from probelab.model import underlying_tokenizer
+    tok = underlying_tokenizer(tokenizer)
+
     messages = [{"role": "user", "content": _SENTINEL}]
 
     try:
-        formatted = tokenizer.apply_chat_template(
+        formatted = tok.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
     except Exception as exc:
@@ -49,7 +58,9 @@ def get_post_instruction_tokens(tokenizer, tokenize: bool = True) -> list[int] |
     if not tokenize:
         return post_text
 
-    return tokenizer(post_text, add_special_tokens=False)["input_ids"]
+    # Pass text by keyword for the same reason the upstream collectors do —
+    # processors bind the first positional arg to `images`.
+    return tok(text=post_text, add_special_tokens=False)["input_ids"]
 
 
 def _resolve_layers(act_dataset: ActivationDataset, layer: LayerSelection) -> list[int]:

@@ -3,7 +3,7 @@ Geometry-of-Truth pipeline (after Marks & Tegmark, 2023).
 
 Components:
   pipeline.py — single-model end-to-end script. Invoke as
-                `python -m probelab.got.pipeline <model_id> --out <dir>`.
+                `python -m probelab.experiments.geometry_of_truth.pipeline <model_id> --out <dir>`.
                 Designed to run once per model in a fresh subprocess so the
                 OS reclaims VRAM between runs.
   results.py  — typed loader (`RunResults`, `load_run`, `load_runs`) for
@@ -15,8 +15,8 @@ The dataset loader for the M&T CSVs lives in
 loaders), since dataset ingestion is a generic concern, not GoT-specific.
 """
 
-from probelab.got.results import RunResults, load_run, load_runs
-from probelab.got.viz import (
+from probelab.experiments.geometry_of_truth.results import RunResults, load_run, load_runs
+from probelab.experiments.geometry_of_truth.viz import (
     plot_predictive_vs_causal,
     plot_probe_direction_stability,
     plot_probe_direction_vs_best_causal,

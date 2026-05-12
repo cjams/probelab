@@ -1,12 +1,12 @@
 """
 Cross-run visualizations for `RunResults` loaded from disk.
 
-These are about *post-hoc* analysis after `probelab.got.pipeline` has run
+These are about *post-hoc* analysis after `probelab.experiments.geometry_of_truth.pipeline` has run
 each model and written its outputs. For live in-memory plots over a single
 sweep / ablation, see `probelab.train.viz` instead.
 
 Each plot function takes `dict[model_id, RunResults]` (as returned by
-`probelab.got.results.load_runs`) and returns a Plotly Figure.
+`probelab.experiments.geometry_of_truth.results.load_runs`) and returns a Plotly Figure.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ import plotly.graph_objects as go
 
 from plotly.subplots import make_subplots
 
-from probelab.got.results import RunResults
+from probelab.experiments.geometry_of_truth.results import RunResults
 from probelab.viz import _stack_unit
 
 

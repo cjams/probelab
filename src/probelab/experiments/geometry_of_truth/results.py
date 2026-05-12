@@ -1,5 +1,5 @@
 """
-Loaders for per-model run results written by `probelab.got.pipeline`.
+Loaders for per-model run results written by `probelab.experiments.geometry_of_truth.pipeline`.
 
 A run directory contains:
     probes.pt              dict {layer: direction tensor}

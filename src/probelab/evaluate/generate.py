@@ -133,11 +133,25 @@ class ModelResponses:
     def __len__(self) -> int:
         return len(self.commands)
 
-    def judge(self, judge: SemanticJudge) -> SemanticScore:
-        """Convenience method to score these responses with a SemanticJudge."""
+    def judge(
+        self,
+        judge: SemanticJudge,
+        *,
+        samples_per_call: int = 10,
+        max_concurrency: int = 8,
+    ) -> SemanticScore:
+        """Convenience method to score these responses with a SemanticJudge.
+
+        Forwards `samples_per_call` and `max_concurrency` to `judge_batch`;
+        defaults give k=10 samples per API call across 8 concurrent threads
+        (~80 samples in flight at any moment). Tune for your provider's rate
+        limits.
+        """
         return judge.judge_batch(
             commands=self.commands,
             responses=self.responses,
+            samples_per_call=samples_per_call,
+            max_concurrency=max_concurrency,
         )
 
     def logit_diff(self, pos_key: str, neg_key: str) -> torch.Tensor:

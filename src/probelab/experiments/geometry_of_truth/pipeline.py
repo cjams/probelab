@@ -16,7 +16,7 @@ reclaims all VRAM between runs (notebook references / accelerate hooks /
 caching allocator can otherwise pin weights even after del + empty_cache).
 
 Usage (preferred — works from any cwd):
-    python -m probelab.got.pipeline <model_id> --out <output_dir>
+    python -m probelab.experiments.geometry_of_truth.pipeline <model_id> --out <output_dir>
 """
 
 from __future__ import annotations

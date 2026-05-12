@@ -51,7 +51,7 @@ def underlying_tokenizer(tokenizer_or_processor):
 
 def load_hf(
     model_id: str,
-    dtype: torch.dtype = torch.bfloat16,
+    dtype: "torch.dtype | str" = "auto",
     device: str = "cuda",
     trust_remote_code: bool = False,
     padding_side: str = "left",
@@ -69,7 +69,12 @@ def load_hf(
 
     Args:
         model_id:          HuggingFace repo ID or local path.
-        dtype:             Model weight dtype. bfloat16 for most modern GPUs.
+        dtype:             Model weight dtype. Defaults to "auto", which lets
+                           transformers read the dtype from the checkpoint's
+                           config — necessary for non-bfloat16 checkpoints
+                           like FP8 quantised models. Pass an explicit
+                           torch.dtype (e.g. torch.bfloat16) to force a
+                           cast at load time.
         device:            Device passed to device_map.
         trust_remote_code: Forwarded to from_pretrained.
         padding_side:      Tokenizer padding side. "left" (default) keeps real
