@@ -4,6 +4,9 @@ probelab is a python library designed to enable end-to-end experiments
 for finding linear probes in open-weight transformer residual streams, with
 support for both huggingface- and transformer_lens-based models.
 
+## Install
+```pip install probelab-py```
+
 ## Probe Flow
 Finding linear probes consists of several high-level steps:
 
