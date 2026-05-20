@@ -7,7 +7,7 @@ support for both huggingface- and transformer_lens-based models.
 ## Install
 ```pip install probelab-py```
 
-## Probe Flow
+## Experimental Flow
 Finding linear probes consists of several high-level steps:
 
 0. Figure out the concept of interest, e.g., "refusal" a la [Arditi et al.](https://arxiv.org/abs/2406.11717), "truth" a la [Marks & Tegmark](https://arxiv.org/abs/2310.06824), or "code vulnerability" a la [Yu et al.](https://arxiv.org/html/2507.09508v1). Picking a concept is up to you and your taste.
